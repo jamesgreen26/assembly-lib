@@ -47,7 +47,7 @@ public record AssemblyUseC2SPacket(AssemblyPath path, BlockPos localPos, Directi
             ServerLevel level = sender.serverLevel();
             AssemblyHost host = packet.path.resolve(level);
             if (host == null) return;
-            host.useAssemblyBlock(packet.localPos, packet.localFace, packet.localHit, sender, packet.hand);
+            host.assemblyController().useAssemblyBlock(packet.localPos, packet.localFace, packet.localHit, sender, packet.hand);
         });
     }
 

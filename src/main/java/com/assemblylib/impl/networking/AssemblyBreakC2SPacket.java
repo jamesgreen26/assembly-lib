@@ -33,7 +33,7 @@ public record AssemblyBreakC2SPacket(AssemblyPath path, BlockPos localPos) imple
             ServerLevel level = sender.serverLevel();
             AssemblyHost host = packet.path.resolve(level);
             if (host == null) return;
-            host.breakAssemblyBlock(packet.localPos, sender);
+            host.assemblyController().breakAssemblyBlock(packet.localPos, sender);
         });
     }
 

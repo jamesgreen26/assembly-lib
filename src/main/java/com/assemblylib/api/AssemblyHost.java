@@ -8,8 +8,6 @@ import org.joml.Matrix4f;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -151,28 +149,6 @@ public interface AssemblyHost {
 
 	default void onHostRemoved() {
 		assemblyController().onHostRemoved();
-	}
-
-	default void setAssemblyClient(Assembly predicted) {
-		assemblyController().setAssemblyClient(predicted);
-	}
-
-	default void breakAssemblyBlock(BlockPos local, ServerPlayer player) {
-		assemblyController().breakAssemblyBlock(local, player);
-	}
-
-	default boolean placeAssemblyBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
-		InteractionHand hand) {
-		return assemblyController().placeAssemblyBlock(local, localFace, localHit, player, hand);
-	}
-
-	default boolean useAssemblyBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
-		InteractionHand hand) {
-		return assemblyController().useAssemblyBlock(local, localFace, localHit, player, hand);
-	}
-
-	default void collideWithPlayer(Player player) {
-		assemblyController().collideWithPlayer(player);
 	}
 
 	// endregion
