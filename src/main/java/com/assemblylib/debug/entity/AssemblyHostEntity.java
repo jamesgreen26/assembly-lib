@@ -93,7 +93,7 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	}
 
 	@Override
-	public AssemblyController assemblyController() {
+	public AssemblyController getAssemblyController() {
 		return controller;
 	}
 
@@ -139,7 +139,7 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	}
 
 	@Override
-	public void breakWholeHost(ServerPlayer player) {
+	public void destroyAssemblyHost() {
 		if (level().isClientSide)
 			return;
 		level().levelEvent(2001, blockPosition(), Block.getId(Blocks.SLIME_BLOCK.defaultBlockState()));
@@ -148,13 +148,13 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 
 	/** The mob drives the assembly straight off its own body yaw — no separate spin state. */
 	@Override
-	public Matrix4f assemblyTransform(float partialTick) {
+	public Matrix4f getAssemblyTransform(float partialTick) {
 		return AssemblyTransform.spinMatrix(assemblyAnchor(), Mth.rotLerp(partialTick, yRotO, getYRot()),
 			Direction.Axis.Y);
 	}
 
 	@Override
-	public Matrix4f assemblyTransformNext() {
+	public Matrix4f getAssemblyTransformNext() {
 		// Project the next pose forward by both this tick's body rotation AND its actual translation,
 		// so a rider is carried along as the mob walks (not just turned as it spins).
 		float next = getYRot() + Mth.wrapDegrees(getYRot() - yRotO);

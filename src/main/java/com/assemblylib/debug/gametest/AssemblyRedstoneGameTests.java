@@ -436,7 +436,7 @@ public class AssemblyRedstoneGameTests {
 		BlockPos furnacePos = new BlockPos(0, 1, 0);
 		place(helper, c, furnacePos, Blocks.FURNACE.defaultBlockState());
 
-		Container furnace = (Container) motor.assemblyController().getAssemblyBlockEntity(furnacePos);
+		Container furnace = (Container) motor.getAssemblyController().getAssemblyBlockEntity(furnacePos);
 		if (furnace == null) {
 			helper.fail("Furnace should have a live block entity on the assembly");
 			return;
@@ -467,8 +467,8 @@ public class AssemblyRedstoneGameTests {
 		place(helper, c, hopperPos, Blocks.HOPPER.defaultBlockState());
 		place(helper, c, chestPos, Blocks.CHEST.defaultBlockState());
 
-		Container chest = (Container) motor.assemblyController().getAssemblyBlockEntity(chestPos);
-		Container hopper = (Container) motor.assemblyController().getAssemblyBlockEntity(hopperPos);
+		Container chest = (Container) motor.getAssemblyController().getAssemblyBlockEntity(chestPos);
+		Container hopper = (Container) motor.getAssemblyController().getAssemblyBlockEntity(hopperPos);
 		if (chest == null || hopper == null) {
 			helper.fail("Chest and hopper should have live block entities");
 			return;
@@ -503,14 +503,14 @@ public class AssemblyRedstoneGameTests {
 		place(helper, c, comparator, Blocks.COMPARATOR.defaultBlockState()
 			.setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST));
 
-		Container chest = (Container) motor.assemblyController().getAssemblyBlockEntity(chestPos);
+		Container chest = (Container) motor.getAssemblyController().getAssemblyBlockEntity(chestPos);
 		if (chest == null) {
 			helper.fail("Chest should have a live block entity");
 			return;
 		}
 		chest.setItem(0, new ItemStack(Items.STONE, 64));
 		// Notify neighbours of the container's new output signal (comparator schedules a recompute).
-		BlockEntity chestBE = motor.assemblyController().getAssemblyBlockEntity(chestPos);
+		BlockEntity chestBE = motor.getAssemblyController().getAssemblyBlockEntity(chestPos);
 		chestBE.setChanged();
 
 		helper.runAfterDelay(2, () -> {
@@ -532,7 +532,7 @@ public class AssemblyRedstoneGameTests {
 
 		BlockPos chestPos = new BlockPos(0, 1, 0);
 		place(helper, c, chestPos, Blocks.CHEST.defaultBlockState());
-		Container chest = (Container) motor.assemblyController().getAssemblyBlockEntity(chestPos);
+		Container chest = (Container) motor.getAssemblyController().getAssemblyBlockEntity(chestPos);
 		chest.setItem(0, new ItemStack(Items.DIAMOND, 5));
 
 		// getUpdateTag flushes live BEs into the assembly, then serializes it.

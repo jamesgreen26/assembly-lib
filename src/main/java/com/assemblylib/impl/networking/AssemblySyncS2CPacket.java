@@ -40,7 +40,7 @@ public record AssemblySyncS2CPacket(AssemblyPath path, CompoundTag state) implem
             AssemblyHost host = packet.path.resolve(player.level());
             if (host == null)
                 return;
-            host.assemblyController().readState(packet.state, player.registryAccess());
+            host.getAssemblyController().readState(packet.state, player.registryAccess());
         });
     }
 

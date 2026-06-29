@@ -483,7 +483,7 @@ public final class AssemblyController {
 
 		// The head coincides with the in-world host; breaking it tears down the whole host.
 		if (local.equals(host.headLocalPos())) {
-			host.breakWholeHost(player);
+			host.destroyAssemblyHost();
 			return;
 		}
 

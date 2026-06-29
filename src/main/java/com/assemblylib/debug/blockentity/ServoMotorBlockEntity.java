@@ -52,7 +52,7 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	}
 
 	@Override
-	public AssemblyController assemblyController() {
+	public AssemblyController getAssemblyController() {
 		return controller;
 	}
 
@@ -109,7 +109,7 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	}
 
 	@Override
-	public void breakWholeHost(ServerPlayer player) {
+	public void destroyAssemblyHost() {
 		if (level == null || level.isClientSide)
 			return;
 		level.levelEvent(2001, worldPosition, Block.getId(getBlockState()));
@@ -145,13 +145,13 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	}
 
 	@Override
-	public Matrix4f assemblyTransform(float partialTick) {
+	public Matrix4f getAssemblyTransform(float partialTick) {
 		float interpolated = AssemblyMath.angleLerp(partialTick, prevAngle, angle);
 		return AssemblyTransform.spinMatrix(assemblyAnchor(), interpolated, getFacing().getAxis());
 	}
 
 	@Override
-	public Matrix4f assemblyTransformNext() {
+	public Matrix4f getAssemblyTransformNext() {
 		float next = angle + (running ? DEGREES_PER_TICK : 0f);
 		return AssemblyTransform.spinMatrix(assemblyAnchor(), next, getFacing().getAxis());
 	}

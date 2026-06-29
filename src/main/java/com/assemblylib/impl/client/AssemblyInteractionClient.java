@@ -340,7 +340,7 @@ public final class AssemblyInteractionClient {
 
 		if (!AssemblyPlacementUtil.placeBlock(mc.level, sim, predicted, player, stack, placed))
 			return false;
-		motor.assemblyController().setAssemblyClient(predicted);
+		motor.getAssemblyController().setAssemblyClient(predicted);
 		return true;
 	}
 
@@ -349,7 +349,7 @@ public final class AssemblyInteractionClient {
 		if (assembly == null) return;
 		Assembly predicted = assembly.copy();
 		predicted.removeBlock(local);
-		motor.assemblyController().setAssemblyClient(predicted);
+		motor.getAssemblyController().setAssemblyClient(predicted);
 	}
 
 	private static void progressMining(boolean fresh) {
@@ -446,7 +446,7 @@ public final class AssemblyInteractionClient {
 		if (mc.player != null) {
 			for (AssemblyHost be : AssemblyHosts.ACTIVE_CLIENT) {
 				if (inClientWorld(be, mc.level))
-					be.assemblyController().collideWithPlayer(mc.player);
+					be.getAssemblyController().collideWithPlayer(mc.player);
 			}
 		}
 	}

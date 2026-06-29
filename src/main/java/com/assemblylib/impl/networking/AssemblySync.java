@@ -37,7 +37,7 @@ public final class AssemblySync {
 
     private static AssemblySyncS2CPacket packetFor(AssemblyHost host, ServerLevel level) {
         CompoundTag state = new CompoundTag();
-        host.assemblyController().writeState(state, level.registryAccess());
+        host.getAssemblyController().writeState(state, level.registryAccess());
         return new AssemblySyncS2CPacket(AssemblyPath.of(host), state);
     }
 }

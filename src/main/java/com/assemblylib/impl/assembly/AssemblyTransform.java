@@ -49,7 +49,7 @@ public final class AssemblyTransform {
 
 	/**
 	 * Build the leaf local -> reference-frame 4x4 matrix for a rotation about {@code anchor}: the
-	 * standard pose a spinning host hands back from {@link AssemblyHost#assemblyTransform(float)}.
+	 * standard pose a spinning host hands back from {@link AssemblyHost#getAssemblyTransform(float)}.
 	 * Pure JOML (no {@code com.mojang.math.Axis}) so it is dist-safe and runs server-side.
 	 */
 	public static Matrix4f spinMatrix(Vec3 anchor, float angleDeg, Direction.Axis axis) {
@@ -86,28 +86,28 @@ public final class AssemblyTransform {
 
 	/** Transform for the interpolated client render pose at {@code partialTick}, composed through any host. */
 	public static AssemblyTransform ofInterpolated(AssemblyHost be, float partialTick) {
-		AssemblyTransform self = fromMatrix(be.assemblyTransform(partialTick));
+		AssemblyTransform self = fromMatrix(be.getAssemblyTransform(partialTick));
 		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofInterpolated(host, partialTick));
 	}
 
 	/** Transform for the raw (server / current) pose, composed through any host assembly. */
 	public static AssemblyTransform ofCurrent(AssemblyHost be) {
-		AssemblyTransform self = fromMatrix(be.assemblyTransform(1.0f));
+		AssemblyTransform self = fromMatrix(be.getAssemblyTransform(1.0f));
 		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofCurrent(host));
 	}
 
 	/**
 	 * Transform for the pose every host in the chain will hold after advancing one more tick by its
-	 * own intended motion ({@link AssemblyHost#assemblyTransformNext()}). Differencing {@code ofCurrent}
+	 * own intended motion ({@link AssemblyHost#getAssemblyTransformNext()}). Differencing {@code ofCurrent}
 	 * and {@code ofIntendedNext} at a platform point yields its carried velocity, including a parent's
 	 * angular velocity sweeping a nested pivot. The host decides what "one tick forward" means (a spin
 	 * step, a translation, …), so a stopped host reports the same pose and thus no carried motion.
 	 * Server-side.
 	 */
 	public static AssemblyTransform ofIntendedNext(AssemblyHost be) {
-		AssemblyTransform self = fromMatrix(be.assemblyTransformNext());
+		AssemblyTransform self = fromMatrix(be.getAssemblyTransformNext());
 		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofIntendedNext(host));
 	}

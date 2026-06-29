@@ -44,7 +44,7 @@ public final class AssemblyRenderer {
 		// the host's own (leaf) rotation, taken straight from its transform.
 		poseStack.translate(facing.getStepX(), facing.getStepY(), facing.getStepZ());
 		poseStack.translate(0.5, 0.5, 0.5);
-		poseStack.mulPose(AssemblyTransform.rotationOf(host.assemblyTransform(partialTick)));
+		poseStack.mulPose(AssemblyTransform.rotationOf(host.getAssemblyTransform(partialTick)));
 		poseStack.translate(-0.5, -0.5, -0.5);
 
 		// The head's own block is invisible; draw the piston-head model directly off the host's

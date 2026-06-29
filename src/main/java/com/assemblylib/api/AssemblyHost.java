@@ -7,9 +7,7 @@ import com.assemblylib.impl.client.renderer.assembly.AssemblyRenderState;
 import org.joml.Matrix4f;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -22,7 +20,7 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>The interface splits into <b>host-native</b> methods (the environment the controller needs:
  * level, facing, position, dirty/sync hooks, the head seed) and <b>delegating defaults</b> that
- * forward to {@link #assemblyController()}. Every collaborator — {@link AssemblyTransform},
+ * forward to {@link #getAssemblyController()}. Every collaborator — {@link AssemblyTransform},
  * {@link AssemblyPath}, the sim/render levels, the networking packets, and the client renderer /
  * interaction layer — targets this interface rather than any concrete host type.
  *
@@ -66,7 +64,7 @@ public interface AssemblyHost {
 	 * an axis, translate, tilt, or stay put — so the library no longer bakes in any rotation policy.
 	 * {@link AssemblyTransform#spinMatrix} builds the common "spin about an axis at an anchor" pose.
 	 */
-	Matrix4f assemblyTransform(float partialTick);
+	Matrix4f getAssemblyTransform(float partialTick);
 
 	/**
 	 * The leaf transform the host will hold after advancing one more tick by its own intended motion,
@@ -74,15 +72,12 @@ public interface AssemblyHost {
 	 * current pose (no carried motion); a moving host overrides it to project its spin/translation
 	 * forward one tick.
 	 */
-	default Matrix4f assemblyTransformNext() {
-		return assemblyTransform(1.0f);
-	}
+	Matrix4f getAssemblyTransformNext();
 
-	/** Tear the whole host down (head broken): for the servo motor, play the break effect and remove the block. */
-	void breakWholeHost(ServerPlayer player);
+	void destroyAssemblyHost();
 
 	/** The controller holding this host's assembly state and logic. */
-	AssemblyController assemblyController();
+	AssemblyController getAssemblyController();
 
 	// endregion
 
@@ -105,25 +100,25 @@ public interface AssemblyHost {
 
 	@Nullable
 	default Assembly getAssembly() {
-		return assemblyController().getAssembly();
+		return getAssemblyController().getAssembly();
 	}
 
 	@Nullable
 	default AssemblyRenderState getRenderState() {
-		return assemblyController().getRenderState();
+		return getAssemblyController().getRenderState();
 	}
 
 	default int getAssemblyBlockCount() {
-		return assemblyController().getAssemblyBlockCount();
+		return getAssemblyController().getAssemblyBlockCount();
 	}
 
 	@Nullable
 	default AssemblyHost getNestedHost(BlockPos local) {
-		return assemblyController().getNestedHost(local);
+		return getAssemblyController().getNestedHost(local);
 	}
 
 	default AABB getRenderBoundingBox() {
-		return assemblyController().getRenderBoundingBox();
+		return getAssemblyController().getRenderBoundingBox();
 	}
 
 	// endregion
@@ -131,19 +126,19 @@ public interface AssemblyHost {
 	// region lifecycle / interaction hooks
 
 	default void serverTick() {
-		assemblyController().serverTick();
+		getAssemblyController().serverTick();
 	}
 
 	default void clientTick() {
-		assemblyController().clientTick();
+		getAssemblyController().clientTick();
 	}
 
 	default void initAssembly() {
-		assemblyController().initAssembly();
+		getAssemblyController().initAssembly();
 	}
 
 	default void onHostRemoved() {
-		assemblyController().onHostRemoved();
+		getAssemblyController().onHostRemoved();
 	}
 
 	// endregion

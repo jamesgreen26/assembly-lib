@@ -33,7 +33,6 @@ import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.assembly.AssemblyTransform;
 import it.unimi.dsi.fastutil.longs.LongArraySet;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.Vec3i;
@@ -186,7 +185,7 @@ public class AssemblyVisualCore {
 		Matrix4f pose = new Matrix4f();
 		pose.translate((float) vp.x + facing.getStepX(), (float) vp.y + facing.getStepY(),
 			(float) vp.z + facing.getStepZ());
-		AssemblyTransform.pivotRotate(pose, AssemblyTransform.rotationOf(host.assemblyTransform(partialTick)));
+		AssemblyTransform.pivotRotate(pose, AssemblyTransform.rotationOf(host.getAssemblyTransform(partialTick)));
 
 		embedding.transforms(pose, pose.normal(new Matrix3f()));
 	}
