@@ -52,6 +52,7 @@ repositories {
     }
     maven { url = "https://maven.tterrag.com/" }     // Registrate (transitive dep of Create)
     maven { url = "https://mvn.devos.one/snapshots" } // Registrate MC1.21 builds (transitive dep of Create)
+    maven { url = "https://api.modrinth.com/maven" }
 }
 
 dependencies {
@@ -76,6 +77,9 @@ dependencies {
     // Create — dev/testing only (not bundled, not used by library code). Lets us assemble real
     // Create blocks/contraptions in runClient to test the assembly machinery against them.
     implementation("com.simibubi.create:create-$minecraft_version:$create_version")
+
+    runtimeOnly("maven.modrinth:spark:${spark_version}")
+
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.0")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.0")
