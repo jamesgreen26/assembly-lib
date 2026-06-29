@@ -1,7 +1,6 @@
 package com.assemblylib.networking;
 
 import com.assemblylib.AssemblyLib;
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.assembly.AssemblyPath;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -45,7 +44,7 @@ public record AssemblyBreakProgressC2SPacket(AssemblyPath path, BlockPos localPo
             ServerLevel level = sender.serverLevel();
             if (packet.path.resolve(level) == null) return;
 
-            Vec3 motorCenter = Vec3.atCenterOf(packet.path.rootMotorPos());
+            Vec3 motorCenter = packet.path.root().broadcastCenter();
             AssemblyDestroyStageS2CPacket s2c =
                     new AssemblyDestroyStageS2CPacket(packet.path, packet.localPos, sender.getId(), packet.stage);
             for (ServerPlayer player : level.players()) {

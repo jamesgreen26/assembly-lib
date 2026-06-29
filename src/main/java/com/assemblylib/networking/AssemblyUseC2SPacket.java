@@ -1,7 +1,7 @@
 package com.assemblylib.networking;
 
 import com.assemblylib.AssemblyLib;
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
+import com.assemblylib.assembly.AssemblyHost;
 import com.assemblylib.assembly.AssemblyPath;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -45,9 +45,9 @@ public record AssemblyUseC2SPacket(AssemblyPath path, BlockPos localPos, Directi
         context.enqueueWork(() -> {
             ServerPlayer sender = (ServerPlayer) context.player();
             ServerLevel level = sender.serverLevel();
-            ServoMotorBlockEntity motor = packet.path.resolve(level);
-            if (motor == null) return;
-            motor.useAssemblyBlock(packet.localPos, packet.localFace, packet.localHit, sender, packet.hand);
+            AssemblyHost host = packet.path.resolve(level);
+            if (host == null) return;
+            host.useAssemblyBlock(packet.localPos, packet.localFace, packet.localHit, sender, packet.hand);
         });
     }
 

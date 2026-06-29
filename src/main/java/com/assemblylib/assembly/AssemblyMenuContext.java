@@ -2,7 +2,6 @@ package com.assemblylib.assembly;
 
 import javax.annotation.Nullable;
 
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.client.renderer.assembly.AssemblyRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -74,9 +73,9 @@ public final class AssemblyMenuContext {
 			return null;
 		resolving = true;
 		try {
-			ServoMotorBlockEntity motor = path.resolve(level);
-			if (motor != null) {
-				AssemblyRenderState renderState = motor.getRenderState();
+			AssemblyHost host = path.resolve(level);
+			if (host != null) {
+				AssemblyRenderState renderState = host.getRenderState();
 				if (renderState != null)
 					return renderState.getBlockEntity(pos);
 			}

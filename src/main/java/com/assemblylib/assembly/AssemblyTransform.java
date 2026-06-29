@@ -4,7 +4,6 @@ import org.joml.Matrix4f;
 
 import com.mojang.math.Axis;
 
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.assembly.collision.Matrix3d;
 import com.assemblylib.assembly.util.AssemblyMath;
 import net.minecraft.core.BlockPos;
@@ -65,16 +64,16 @@ public final class AssemblyTransform {
 	}
 
 	/** Transform for the interpolated client render angle at {@code partialTick}, composed through any host. */
-	public static AssemblyTransform ofInterpolated(ServoMotorBlockEntity be, float partialTick) {
+	public static AssemblyTransform ofInterpolated(AssemblyHost be, float partialTick) {
 		AssemblyTransform self = leaf(anchorOf(be), be.getInterpolatedAngle(partialTick), be.getRotationAxis());
-		ServoMotorBlockEntity host = be.hostMotor();
+		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofInterpolated(host, partialTick));
 	}
 
 	/** Transform for the raw (server / current) angle, composed through any host assembly. */
-	public static AssemblyTransform ofCurrent(ServoMotorBlockEntity be) {
+	public static AssemblyTransform ofCurrent(AssemblyHost be) {
 		AssemblyTransform self = leaf(anchorOf(be), be.getAngle(), be.getRotationAxis());
-		ServoMotorBlockEntity host = be.hostMotor();
+		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofCurrent(host));
 	}
 
@@ -86,17 +85,17 @@ public final class AssemblyTransform {
 	 * {@code angle - prevAngle}) makes it correct both for riders resolved <em>after</em> the angle
 	 * advances and for a block detaching <em>before</em> it. Server-side.
 	 */
-	public static AssemblyTransform ofIntendedNext(ServoMotorBlockEntity be) {
+	public static AssemblyTransform ofIntendedNext(AssemblyHost be) {
 		float next = be.getAngle() + be.getIntendedSpin();
 		AssemblyTransform self = leaf(anchorOf(be), next, be.getRotationAxis());
-		ServoMotorBlockEntity host = be.hostMotor();
+		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofIntendedNext(host));
 	}
 
-	private static Vec3 anchorOf(ServoMotorBlockEntity be) {
-		// For a nested motor this is its cell in the PARENT's local space; composition through the
+	private static Vec3 anchorOf(AssemblyHost be) {
+		// For a nested host this is its cell in the PARENT's local space; composition through the
 		// host transform lifts it to world space.
-		return Vec3.atLowerCornerOf(be.getBlockPos().relative(be.getFacing()));
+		return be.assemblyAnchor();
 	}
 
 	private static Matrix3d rotationMatrix(float angleDeg, Direction.Axis axis) {

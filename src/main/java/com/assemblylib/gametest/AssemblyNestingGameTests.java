@@ -178,7 +178,9 @@ public class AssemblyNestingGameTests {
 		}
 
 		AssemblyPath path = AssemblyPath.of(nested);
-		if (!path.rootMotorPos().equals(parent.getBlockPos()) || path.nestedCells().size() != 1
+		boolean rootMatches = path.root() instanceof AssemblyPath.BlockPosRoot root
+			&& root.pos().equals(parent.getBlockPos());
+		if (!rootMatches || path.nestedCells().size() != 1
 			|| !path.nestedCells().get(0).equals(nestedCell)) {
 			helper.fail("Path should be (parentPos, [nestedCell]) but was " + path);
 			return;

@@ -2,7 +2,7 @@ package com.assemblylib.client.screens;
 
 import javax.annotation.Nullable;
 
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
+import com.assemblylib.assembly.AssemblyHost;
 import com.assemblylib.client.renderer.assembly.AssemblyRenderState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -27,8 +27,8 @@ public final class AssemblyScreenAccessClient {
 		if (level == null)
 			return null;
 		if (motorPos != null) {
-			if (level.getBlockEntity(motorPos) instanceof ServoMotorBlockEntity motor) {
-				AssemblyRenderState renderState = motor.getRenderState();
+			if (level.getBlockEntity(motorPos) instanceof AssemblyHost host) {
+				AssemblyRenderState renderState = host.getRenderState();
 				if (renderState != null)
 					return renderState.getBlockEntity(localPos);
 			}

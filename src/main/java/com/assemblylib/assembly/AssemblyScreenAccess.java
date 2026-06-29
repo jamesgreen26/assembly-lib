@@ -2,7 +2,6 @@ package com.assemblylib.assembly;
 
 import javax.annotation.Nullable;
 
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -32,8 +31,8 @@ public final class AssemblyScreenAccess {
 	@Nullable
 	public static BlockEntity resolve(ServerLevel level, @Nullable BlockPos motorPos, BlockPos localPos) {
 		if (motorPos != null) {
-			if (level.getBlockEntity(motorPos) instanceof ServoMotorBlockEntity motor)
-				return motor.getAssemblyBlockEntity(localPos);
+			if (level.getBlockEntity(motorPos) instanceof AssemblyHost host)
+				return host.getAssemblyBlockEntity(localPos);
 			return null;
 		}
 		return level.getBlockEntity(localPos);
@@ -47,8 +46,8 @@ public final class AssemblyScreenAccess {
 	public static boolean inReach(ServerPlayer player, @Nullable BlockPos motorPos, BlockPos localPos) {
 		ServerLevel level = player.serverLevel();
 		Vec3 worldCenter;
-		if (motorPos != null && level.getBlockEntity(motorPos) instanceof ServoMotorBlockEntity motor) {
-			worldCenter = AssemblyTransform.ofCurrent(motor).localBlockCenterToWorld(localPos);
+		if (motorPos != null && level.getBlockEntity(motorPos) instanceof AssemblyHost host) {
+			worldCenter = AssemblyTransform.ofCurrent(host).localBlockCenterToWorld(localPos);
 		} else {
 			worldCenter = Vec3.atCenterOf(localPos);
 		}

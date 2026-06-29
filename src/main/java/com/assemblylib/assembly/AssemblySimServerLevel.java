@@ -9,7 +9,6 @@ import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
 
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.mixin.EntityAccessor;
 import net.createmod.catnip.levelWrappers.WrappedServerLevel;
 import net.minecraft.core.BlockPos;
@@ -150,8 +149,8 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 
 	@Override
 	@Nullable
-	public ServoMotorBlockEntity getAssemblyHostMotor() {
-		return realLevel.getBlockEntity(motorPos) instanceof ServoMotorBlockEntity motor ? motor : null;
+	public AssemblyHost getAssemblyHost() {
+		return realLevel.getBlockEntity(motorPos) instanceof AssemblyHost host ? host : null;
 	}
 
 	/** The assembly's current world pose, or {@code null} when none is available (e.g. tests). */

@@ -6,8 +6,8 @@ import java.util.function.Supplier;
 import javax.annotation.Nullable;
 
 import dev.engine_room.flywheel.api.visualization.VisualizationLevel;
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.assembly.Assembly;
+import com.assemblylib.assembly.AssemblyHost;
 import com.assemblylib.assembly.AssemblyHostLevel;
 import com.assemblylib.assembly.AssemblySimLevel;
 import com.assemblylib.assembly.AssemblyTransform;
@@ -45,23 +45,23 @@ public class AssemblyRenderLevel extends AssemblySimLevel implements Visualizati
 	private final Map<BlockPos, BlockEntity> blockEntities;
 	@Nullable
 	private final Supplier<AssemblyTransform> transform;
-	/** The motor whose assembly this level hosts, so a nested motor can compose its transform. */
+	/** The host whose assembly this level hosts, so a nested host can compose its transform. */
 	@Nullable
-	private final ServoMotorBlockEntity hostMotor;
+	private final AssemblyHost host;
 
 	public AssemblyRenderLevel(Level level, Assembly assembly,
 		Map<BlockPos, BlockEntity> blockEntities, @Nullable Supplier<AssemblyTransform> transform,
-		@Nullable ServoMotorBlockEntity hostMotor) {
+		@Nullable AssemblyHost host) {
 		super(level, assembly);
 		this.blockEntities = blockEntities;
 		this.transform = transform;
-		this.hostMotor = hostMotor;
+		this.host = host;
 	}
 
 	@Nullable
 	@Override
-	public ServoMotorBlockEntity getAssemblyHostMotor() {
-		return hostMotor;
+	public AssemblyHost getAssemblyHost() {
+		return host;
 	}
 
 	@Nullable

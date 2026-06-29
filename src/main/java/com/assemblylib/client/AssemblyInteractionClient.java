@@ -7,10 +7,11 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.SheetedDecalTextureGenerator;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.client.renderer.assembly.AssemblyRenderWorld;
 import com.assemblylib.assembly.Assembly;
 import com.assemblylib.assembly.AssemblyBlockGetter;
+import com.assemblylib.assembly.AssemblyHost;
+import com.assemblylib.assembly.AssemblyHosts;
 import com.assemblylib.assembly.AssemblyMenuContext;
 import com.assemblylib.assembly.AssemblyPath;
 import com.assemblylib.assembly.AssemblyPlacementUtil;
@@ -71,14 +72,14 @@ public final class AssemblyInteractionClient {
 	private static final int ACTION_DELAY = 5;
 	private static final int OUTLINE_ARGB_ALPHA = 102; // ~0.4
 
-	private record Hit(ServoMotorBlockEntity motor, BlockPos localPos, Direction localFace, Vec3 localHit,
+	private record Hit(AssemblyHost motor, BlockPos localPos, Direction localFace, Vec3 localHit,
 		Vec3 worldHit, AssemblyTransform transform) {}
 
 	private record RemoteBreak(AssemblyPath path, BlockPos localPos, int stage) {}
 
 	private static Hit currentHit;
 
-	private static ServoMotorBlockEntity breakMotor;
+	private static AssemblyHost breakMotor;
 	private static BlockPos breakLocal;
 	private static float destroyProgress;
 	private static int lastSentStage = -1;
@@ -88,7 +89,7 @@ public final class AssemblyInteractionClient {
 	// The assembly the local player is currently standing on (Y-axis only), and the
 	// platform's interpolated angle last frame, so we can turn the player exactly in step
 	// with the rendered rotation each frame (smooth; a per-tick turn would step at 20 Hz).
-	private static ServoMotorBlockEntity ridingMotor;
+	private static AssemblyHost ridingMotor;
 	private static float lastPlatformAngle;
 
 	// region input (called from MinecraftMixin)
@@ -98,9 +99,9 @@ public final class AssemblyInteractionClient {
 	}
 
 	public static Vec3 maybeBackOffFromAssemblyEdge(Player player, Vec3 movement, float maxUpStep) {
-		if (player == null || player.level() == null || ServoMotorBlockEntity.ACTIVE_CLIENT.isEmpty())
+		if (player == null || player.level() == null || AssemblyHosts.ACTIVE_CLIENT.isEmpty())
 			return null;
-		ServoMotorBlockEntity supportMotor = findSupportingAssembly(player, maxUpStep);
+		AssemblyHost supportMotor = findSupportingAssembly(player, maxUpStep);
 		if (supportMotor == null)
 			return null;
 
@@ -153,10 +154,10 @@ public final class AssemblyInteractionClient {
 		return player.level().noCollision(player, supportBox) && !intersectsAnyAssembly(player, supportBox);
 	}
 
-	private static ServoMotorBlockEntity findSupportingAssembly(Player player, float fallDistance) {
+	private static AssemblyHost findSupportingAssembly(Player player, float fallDistance) {
 		AABB supportBox = supportBox(player, 0.0D, 0.0D, fallDistance);
-		for (ServoMotorBlockEntity motor : ServoMotorBlockEntity.ACTIVE_CLIENT) {
-			if (motor.getLevel() != player.level())
+		for (AssemblyHost motor : AssemblyHosts.ACTIVE_CLIENT) {
+			if (motor.assemblyLevel() != player.level())
 				continue;
 			Assembly assembly = motor.getAssembly();
 			if (assembly == null || assembly.isEmpty())
@@ -183,8 +184,8 @@ public final class AssemblyInteractionClient {
 	}
 
 	private static boolean intersectsAnyAssembly(Player player, AABB worldBox) {
-		for (ServoMotorBlockEntity motor : ServoMotorBlockEntity.ACTIVE_CLIENT) {
-			if (motor.getLevel() != player.level())
+		for (AssemblyHost motor : AssemblyHosts.ACTIVE_CLIENT) {
+			if (motor.assemblyLevel() != player.level())
 				continue;
 			Assembly assembly = motor.getAssembly();
 			if (assembly == null || assembly.isEmpty())
@@ -322,7 +323,7 @@ public final class AssemblyInteractionClient {
 	private static boolean predictPlacement(LocalPlayer player, Hit hit, InteractionHand hand) {
 		Minecraft mc = Minecraft.getInstance();
 		if (mc.level == null) return false;
-		ServoMotorBlockEntity motor = hit.motor();
+		AssemblyHost motor = hit.motor();
 		Assembly assembly = motor.getAssembly();
 		if (assembly == null) return false;
 
@@ -342,7 +343,7 @@ public final class AssemblyInteractionClient {
 		return true;
 	}
 
-	private static void predictBreak(ServoMotorBlockEntity motor, BlockPos local) {
+	private static void predictBreak(AssemblyHost motor, BlockPos local) {
 		Assembly assembly = motor.getAssembly();
 		if (assembly == null) return;
 		Assembly predicted = assembly.copy();
@@ -370,7 +371,7 @@ public final class AssemblyInteractionClient {
 			}
 		}
 
-		ServoMotorBlockEntity motor = currentHit.motor();
+		AssemblyHost motor = currentHit.motor();
 		BlockPos local = currentHit.localPos();
 		Assembly assembly = motor.getAssembly();
 		if (assembly == null) {
@@ -411,7 +412,7 @@ public final class AssemblyInteractionClient {
 		}
 	}
 
-	private static void sendBreak(ServoMotorBlockEntity motor, BlockPos local) {
+	private static void sendBreak(AssemblyHost motor, BlockPos local) {
 		AssemblyLibPackets.sendToServer(new AssemblyBreakC2SPacket(AssemblyPath.of(motor), local));
 	}
 
@@ -442,7 +443,7 @@ public final class AssemblyInteractionClient {
 		// Resolve the local player against every assembled assembly (client drives
 		// this because player movement is client-authoritative).
 		if (mc.player != null) {
-			for (ServoMotorBlockEntity be : ServoMotorBlockEntity.ACTIVE_CLIENT) {
+			for (AssemblyHost be : AssemblyHosts.ACTIVE_CLIENT) {
 				if (inClientWorld(be, mc.level))
 					be.collideWithPlayer(mc.player);
 			}
@@ -454,12 +455,12 @@ public final class AssemblyInteractionClient {
 	 * its host chain to the root motor and compare. Lets nested assemblys participate in client
 	 * picking and player collision.
 	 */
-	private static boolean inClientWorld(ServoMotorBlockEntity be, net.minecraft.world.level.Level clientLevel) {
-		ServoMotorBlockEntity m = be;
-		ServoMotorBlockEntity host;
-		while ((host = m.hostMotor()) != null)
+	private static boolean inClientWorld(AssemblyHost be, net.minecraft.world.level.Level clientLevel) {
+		AssemblyHost m = be;
+		AssemblyHost host;
+		while ((host = m.assemblyParentHost()) != null)
 			m = host;
-		return m.getLevel() == clientLevel;
+		return m.assemblyLevel() == clientLevel;
 	}
 
 	/**
@@ -475,7 +476,7 @@ public final class AssemblyInteractionClient {
 			return;
 		}
 		float partialTick = (float) event.getPartialTick();
-		ServoMotorBlockEntity motor = findRidingMotor(player, partialTick);
+		AssemblyHost motor = findRidingMotor(player, partialTick);
 		if (motor == null) {
 			ridingMotor = null;
 			return;
@@ -507,9 +508,9 @@ public final class AssemblyInteractionClient {
 	}
 
 	@org.jetbrains.annotations.Nullable
-	private static ServoMotorBlockEntity findRidingMotor(LocalPlayer player, float partialTick) {
-		for (ServoMotorBlockEntity be : ServoMotorBlockEntity.ACTIVE_CLIENT) {
-			if (be.getRotationAxis() != Direction.Axis.Y || be.getLevel() != player.level())
+	private static AssemblyHost findRidingMotor(LocalPlayer player, float partialTick) {
+		for (AssemblyHost be : AssemblyHosts.ACTIVE_CLIENT) {
+			if (be.getRotationAxis() != Direction.Axis.Y || be.assemblyLevel() != player.level())
 				continue;
 			Assembly assembly = be.getAssembly();
 			if (assembly == null || assembly.isEmpty())
@@ -561,7 +562,7 @@ public final class AssemblyInteractionClient {
 			renderCrack(pose, cam, breakMotor, breakLocal, Math.min(9, (int) (destroyProgress * 10f)), crumbling);
 		for (RemoteBreak rb : remoteBreaks.values()) {
 			if (rb.stage() < 0) continue;
-			ServoMotorBlockEntity m = rb.path().resolve(mc.level);
+			AssemblyHost m = rb.path().resolve(mc.level);
 			if (m != null && m.getAssembly() != null)
 				renderCrack(pose, cam, m, rb.localPos(), Math.min(9, rb.stage()), crumbling);
 		}
@@ -580,7 +581,7 @@ public final class AssemblyInteractionClient {
 		currentHit = null;
 		Minecraft mc = Minecraft.getInstance();
 		LocalPlayer player = mc.player;
-		if (player == null || mc.level == null || ServoMotorBlockEntity.ACTIVE_CLIENT.isEmpty()) return;
+		if (player == null || mc.level == null || AssemblyHosts.ACTIVE_CLIENT.isEmpty()) return;
 
 		double reach = player.blockInteractionRange();
 		Vec3 eye = player.getEyePosition(partialTick);
@@ -592,7 +593,7 @@ public final class AssemblyInteractionClient {
 			bestDist = mc.hitResult.getLocation().distanceTo(eye);
 
 		Hit best = null;
-		for (ServoMotorBlockEntity be : ServoMotorBlockEntity.ACTIVE_CLIENT) {
+		for (AssemblyHost be : AssemblyHosts.ACTIVE_CLIENT) {
 			if (!inClientWorld(be, mc.level)) continue;
 			Assembly assembly = be.getAssembly();
 			if (assembly == null || assembly.isEmpty()) continue;
@@ -645,7 +646,7 @@ public final class AssemblyInteractionClient {
 		buffers.endBatch(RenderType.lines());
 	}
 
-	private static void renderCrack(PoseStack pose, Vec3 cam, ServoMotorBlockEntity motor, BlockPos local, int stage,
+	private static void renderCrack(PoseStack pose, Vec3 cam, AssemblyHost motor, BlockPos local, int stage,
 		MultiBufferSource.BufferSource crumbling) {
 		Assembly assembly = motor.getAssembly();
 		if (assembly == null) return;
@@ -659,7 +660,7 @@ public final class AssemblyInteractionClient {
 		RenderType crackType = ModelBakery.DESTROY_TYPES.get(stage);
 		VertexConsumer vc = new SheetedDecalTextureGenerator(crumbling.getBuffer(crackType), pose.last(), 1.0f);
 		Minecraft.getInstance().getBlockRenderer().renderBreakingTexture(info.state(), local,
-			new AssemblyRenderWorld(motor.getLevel(), assembly), pose, vc);
+			new AssemblyRenderWorld(motor.assemblyLevel(), assembly), pose, vc);
 		pose.popPose();
 	}
 

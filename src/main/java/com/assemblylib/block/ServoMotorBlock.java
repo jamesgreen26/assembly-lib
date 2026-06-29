@@ -138,7 +138,7 @@ public class ServoMotorBlock extends BaseEntityBlock {
 		boolean movedByPiston) {
 		if (!state.is(newState.getBlock())) {
 			if (level.getBlockEntity(pos) instanceof ServoMotorBlockEntity motor)
-				motor.onMotorRemoved();
+				motor.onHostRemoved();
 		}
 		super.onRemove(state, level, pos, newState, movedByPiston);
 	}

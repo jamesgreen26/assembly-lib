@@ -1,7 +1,7 @@
 package com.assemblylib.networking;
 
 import com.assemblylib.AssemblyLib;
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
+import com.assemblylib.assembly.AssemblyHost;
 import com.assemblylib.assembly.AssemblyPath;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -31,9 +31,9 @@ public record AssemblyBreakC2SPacket(AssemblyPath path, BlockPos localPos) imple
         context.enqueueWork(() -> {
             ServerPlayer sender = (ServerPlayer) context.player();
             ServerLevel level = sender.serverLevel();
-            ServoMotorBlockEntity motor = packet.path.resolve(level);
-            if (motor == null) return;
-            motor.breakAssemblyBlock(packet.localPos, sender);
+            AssemblyHost host = packet.path.resolve(level);
+            if (host == null) return;
+            host.breakAssemblyBlock(packet.localPos, sender);
         });
     }
 

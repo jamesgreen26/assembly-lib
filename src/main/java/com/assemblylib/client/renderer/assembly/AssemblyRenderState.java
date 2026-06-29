@@ -10,8 +10,8 @@ import java.util.function.Supplier;
 import javax.annotation.Nullable;
 
 import com.assemblylib.AssemblyLib;
-import com.assemblylib.blockentity.ServoMotorBlockEntity;
 import com.assemblylib.assembly.Assembly;
+import com.assemblylib.assembly.AssemblyHost;
 import com.assemblylib.assembly.AssemblyTransform;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -48,9 +48,9 @@ public class AssemblyRenderState {
 	private final Level level;
 	@Nullable
 	private final Supplier<AssemblyTransform> transform;
-	/** The motor owning this assembly, handed to the render level so nested motors find their host. */
+	/** The host owning this assembly, handed to the render level so nested hosts find their parent. */
 	@Nullable
-	private final ServoMotorBlockEntity hostMotor;
+	private final AssemblyHost host;
 
 	/** The last assembly reconciled against (identity changes on every sync); used as the no-op gate. */
 	@Nullable
@@ -73,11 +73,11 @@ public class AssemblyRenderState {
 	private long structureRevision;
 
 	public AssemblyRenderState(Level level, Assembly assembly,
-		@Nullable Supplier<AssemblyTransform> transform, @Nullable ServoMotorBlockEntity hostMotor) {
+		@Nullable Supplier<AssemblyTransform> transform, @Nullable AssemblyHost host) {
 		this.level = level;
 		this.transform = transform;
-		this.hostMotor = hostMotor;
-		this.renderLevel = new AssemblyRenderLevel(level, assembly, blockEntitiesByPos, transform, hostMotor);
+		this.host = host;
+		this.renderLevel = new AssemblyRenderLevel(level, assembly, blockEntitiesByPos, transform, host);
 		this.levelAssembly = assembly;
 		reconcile(assembly);
 		this.assembly = assembly;
@@ -187,7 +187,7 @@ public class AssemblyRenderState {
 			// Re-point the host level at the new structure so its block reads stay current, then rebind
 			// every (preserved and newly added) block entity to it.
 			if (levelAssembly != next) {
-				renderLevel = new AssemblyRenderLevel(level, next, blockEntitiesByPos, transform, hostMotor);
+				renderLevel = new AssemblyRenderLevel(level, next, blockEntitiesByPos, transform, host);
 				levelAssembly = next;
 			}
 			for (BlockEntity be : blockEntities)
