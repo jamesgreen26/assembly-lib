@@ -205,7 +205,7 @@ public class AssemblyVisualCore {
 		if (sectionCollector == null)
 			return;
 
-		AABB bounds = host.getRenderBoundingBox();
+		AABB bounds = host.getRenderBoundingBoxWithNested();
 		int minX = SectionPos.blockToSectionCoord(Mth.floor(bounds.minX) - LIGHT_PADDING);
 		int minY = SectionPos.blockToSectionCoord(Mth.floor(bounds.minY) - LIGHT_PADDING);
 		int minZ = SectionPos.blockToSectionCoord(Mth.floor(bounds.minZ) - LIGHT_PADDING);

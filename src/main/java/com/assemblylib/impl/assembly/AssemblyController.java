@@ -804,6 +804,44 @@ public final class AssemblyController {
 		return computeWorldBounds(AssemblyTransform.ofCurrent(host));
 	}
 
+	/**
+	 * This assembly's render bounding box unioned with that of every (recursively) nested host, so
+	 * lighting and culling cover blocks contributed by mounted sub-assemblies that can reach outside
+	 * this assembly's own block bounds. Each nested host's box is already world-space — its transform
+	 * composes through this one.
+	 */
+	public AABB getRenderBoundingBoxWithNested() {
+		AABB bounds = getRenderBoundingBox();
+		for (AssemblyHost nested : getNestedHosts()) {
+			AssemblyController controller = nested.getAssemblyController();
+			if (controller.getAssembly() != null)
+				bounds = bounds.minmax(controller.getRenderBoundingBoxWithNested());
+		}
+		return bounds;
+	}
+
+	/** Every host reconstructed directly inside this assembly (one nesting level down). Dist-aware. */
+	private List<AssemblyHost> getNestedHosts() {
+		if (assembly == null)
+			return List.of();
+		List<AssemblyHost> hosts = new ArrayList<>();
+		Level level = host.assemblyLevel();
+		if (level != null && level.isClientSide) {
+			AssemblyRenderState rs = getRenderState();
+			if (rs != null)
+				for (BlockEntity be : rs.getBlockEntities())
+					if (be instanceof AssemblyHost nested)
+						hosts.add(nested);
+		} else {
+			for (BlockPos local : assembly.getBlocks().keySet()) {
+				AssemblyHost nested = getNestedHost(local);
+				if (nested != null)
+					hosts.add(nested);
+			}
+		}
+		return hosts;
+	}
+
 	// endregion
 
 	// region sync + persistence

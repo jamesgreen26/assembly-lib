@@ -121,6 +121,11 @@ public interface AssemblyHost {
 		return getAssemblyController().getRenderBoundingBox();
 	}
 
+	/** This host's render bounds unioned with those of every nested host (for lighting / culling). */
+	default AABB getRenderBoundingBoxWithNested() {
+		return getAssemblyController().getRenderBoundingBoxWithNested();
+	}
+
 	// endregion
 
 	// region lifecycle / interaction hooks
