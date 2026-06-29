@@ -12,13 +12,19 @@ import com.assemblylib.debug.entity.AssemblyHostEntity;
 import com.assemblylib.debug.entity.ModEntities;
 import com.assemblylib.impl.assembly.Assembly;
 import com.assemblylib.impl.assembly.AssemblyPath;
+import com.assemblylib.impl.assembly.AssemblyRotatedEntity;
+import com.assemblylib.impl.assembly.AssemblySimServerLevel;
 import com.assemblylib.impl.assembly.AssemblyTransform;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -305,5 +311,134 @@ public class AssemblyNestingGameTests {
 			return;
 		}
 		helper.succeed();
+	}
+
+	/** Set up a parent servo (root) with a nested servo, ticked so the nested is live with its assembly. */
+	private static ServoMotorBlockEntity setupNested(GameTestHelper helper, BlockPos nestedCell) {
+		helper.setBlock(MOTOR_POS, ModBlocks.SERVO_MOTOR.get().defaultBlockState()
+			.setValue(ServoMotorBlock.FACING, Direction.EAST));
+		ServoMotorBlockEntity parent = (ServoMotorBlockEntity) helper.getBlockEntity(MOTOR_POS);
+		parent.initAssembly();
+		parent.getAssembly().putBlock(nestedCell, ModBlocks.SERVO_MOTOR.get().defaultBlockState()
+			.setValue(ServoMotorBlock.FACING, Direction.EAST), null, null);
+		parent.serverTick();
+		return parent;
+	}
+
+	/**
+	 * A falling block detached from a <em>nested</em> assembly must spawn into the genuine root world at
+	 * the assembly's composed (root-relative) world position — not into the parent sim level, where the
+	 * pose would be transformed a second time. Places an unsupported sand block in the nested assembly,
+	 * lets its scheduled fall fire, and asserts the entity lands at {@code ofCurrent(nested).localToWorld}.
+	 */
+	@GameTest(template = TEMPLATE)
+	public static void nestedDetachedFallingBlockUsesRootWorldPosition(GameTestHelper helper) {
+		ServerLevel level = (ServerLevel) helper.getLevel();
+		BlockPos nestedCell = new BlockPos(1, 0, 0);
+		ServoMotorBlockEntity parent = setupNested(helper, nestedCell);
+		ServoMotorBlockEntity nested = parent.getNestedMotor(nestedCell);
+		if (nested == null || nested.getAssembly() == null) {
+			helper.fail("Nested motor should be live with its own assembly");
+			return;
+		}
+
+		// Unsupported sand (air directly below), 26-connected to the nested head: it falls rather than
+		// being treated as a disconnected group. Placed through a sim so FallingBlock schedules its fall.
+		BlockPos sandCell = new BlockPos(0, 1, 0);
+		AssemblySimServerLevel nestedSim = new AssemblySimServerLevel((ServerLevel) nested.assemblyLevel(),
+			nested.getAssembly(), nestedCell, nested, null, null, () -> AssemblyTransform.ofCurrent(nested));
+		nestedSim.setBlock(sandCell, Blocks.SAND.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL);
+
+		// The expected detach pose: the cell's bottom-centre through the full composed (root) transform.
+		Vec3 feet = new Vec3(sandCell.getX() + 0.5, sandCell.getY(), sandCell.getZ() + 0.5);
+		Vec3 expected = AssemblyTransform.ofCurrent(nested).localToWorld(feet);
+
+		helper.runAfterDelay(3, () -> {
+			parent.serverTick(); // ticks the nested motor → the sand's scheduled fall → detach
+			AABB area = new AABB(BlockPos.containing(expected)).inflate(8.0);
+			List<FallingBlockEntity> falling = level.getEntitiesOfClass(FallingBlockEntity.class, area);
+			if (falling.isEmpty()) {
+				helper.fail("A FallingBlockEntity should have detached from the nested assembly into the root world");
+				return;
+			}
+			FallingBlockEntity fb = falling.get(0);
+			// A double transform (spawning into the parent sim) would offset this by the parent's whole
+			// translation — many blocks — so a tight tolerance distinguishes the correct root pose.
+			if (fb.position().distanceTo(expected) > 0.5) {
+				helper.fail("Detached block should be at the composed root position " + expected
+					+ " but was at " + fb.position());
+				return;
+			}
+			helper.succeed();
+		});
+	}
+
+	/**
+	 * When the parent assembly is spinning, a block detached from the nested assembly must inherit the
+	 * <em>composed</em> root-world orientation and carried velocity (the parent's spin sweeping the nested
+	 * platform), not just the nested assembly's own (here identity) pose. Powers the parent so it spins,
+	 * then detaches a nested block and checks the entity carries a non-identity rotation and a non-zero
+	 * velocity, while still landing at the composed root position.
+	 */
+	@GameTest(template = TEMPLATE)
+	public static void nestedDetachedFallingBlockInheritsComposedSpin(GameTestHelper helper) {
+		ServerLevel level = (ServerLevel) helper.getLevel();
+		BlockPos nestedCell = new BlockPos(1, 0, 0);
+		ServoMotorBlockEntity parent = setupNested(helper, nestedCell);
+		// Power the parent so it spins about its facing (X) axis; the nested platform is swept along.
+		helper.setBlock(MOTOR_POS.above(), Blocks.REDSTONE_BLOCK.defaultBlockState());
+		for (int i = 0; i < 5; i++)
+			parent.serverTick();
+
+		ServoMotorBlockEntity nested = parent.getNestedMotor(nestedCell);
+		if (nested == null || nested.getAssembly() == null) {
+			helper.fail("Nested motor should be live with its own assembly");
+			return;
+		}
+
+		BlockPos sandCell = new BlockPos(0, 1, 0);
+		AssemblySimServerLevel nestedSim = new AssemblySimServerLevel((ServerLevel) nested.assemblyLevel(),
+			nested.getAssembly(), nestedCell, nested, null, null, () -> AssemblyTransform.ofCurrent(nested));
+		nestedSim.setBlock(sandCell, Blocks.SAND.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL);
+
+		helper.runAfterDelay(3, () -> {
+			parent.serverTick(); // advances the spin, then detaches the sand at that pose
+			// The gametest world ticks the parent block entity itself, so the exact spin angle at detach
+			// is timing-dependent; assert the qualitative composed-root behaviour rather than an exact angle.
+			Vec3 expected = AssemblyTransform.ofCurrent(nested)
+				.localToWorld(new Vec3(sandCell.getX() + 0.5, sandCell.getY(), sandCell.getZ() + 0.5));
+
+			AABB area = new AABB(BlockPos.containing(expected)).inflate(8.0);
+			List<FallingBlockEntity> falling = level.getEntitiesOfClass(FallingBlockEntity.class, area);
+			if (falling.isEmpty()) {
+				helper.fail("A FallingBlockEntity should have detached from the spinning nested assembly");
+				return;
+			}
+			FallingBlockEntity fb = falling.get(0);
+			// Root-world position (a few ticks of spin at the cell radius stays well within tolerance; a
+			// double transform into the parent sim would be off by the parent's whole translation).
+			if (fb.position().distanceTo(expected) > 1.0) {
+				helper.fail("Detached block should land near the composed root position " + expected
+					+ " but was at " + fb.position());
+				return;
+			}
+			// Inherits the parent's spin: a non-identity orientation purely about the parent's facing (X)
+			// axis — not the nested assembly's own (identity) pose.
+			Quaternionf rot = ((AssemblyRotatedEntity) fb).zps$getAssemblyRotation();
+			if (Math.abs(rot.w) > 0.9999) {
+				helper.fail("Detached block should inherit the parent's (non-identity) spin orientation, got " + rot);
+				return;
+			}
+			if (Math.abs(rot.y) > 1.0e-4 || Math.abs(rot.z) > 1.0e-4) {
+				helper.fail("Inherited orientation should be about the parent's X axis, got " + rot);
+				return;
+			}
+			// Carried velocity from the parent sweeping the nested platform (root-world, non-zero).
+			if (fb.getDeltaMovement().length() < 1.0e-4) {
+				helper.fail("Detached block from a spinning parent should carry a non-zero root-world velocity");
+				return;
+			}
+			helper.succeed();
+		});
 	}
 }

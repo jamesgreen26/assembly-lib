@@ -79,11 +79,7 @@ public final class AssemblyCollider {
 
 			AABB localBB = entityBounds.move(position).inflate(1.0E-7D);
 			OrientedBB obb = new OrientedBB(localBB);
-			// Orient the entity box without the assembly's world-Y yaw, so it shares the
-			// assembly's Y rotation (turns with a turntable) instead of keeping its
-			// world-aligned footprint. The full rotationMatrix is still used for the
-			// position/motion/result transforms.
-			obb.setRotation(transform.worldToLocalRotationNoWorldYaw());
+			obb.setRotation(entityBoxRotation(entity, transform));
 
 			CollisionList collidableBBs = new CollisionList();
 			getPotentiallyCollidedShapes(rootLevel, assembly, localBB.expandTowards(motion), new Populate(collidableBBs));
@@ -267,6 +263,22 @@ public final class AssemblyCollider {
 
 			entity.setDeltaMovement(entityMotion);
 		}
+	}
+
+	/**
+	 * The orientation of {@code entity}'s collision box in the assembly's LOCAL frame.
+	 *
+	 * <p>A {@link FallingBlockEntity} carries the (possibly rotating) assembly's own orientation, so its
+	 * box is treated as axis-aligned WITH the assembly — identity in the local frame, where the structure's
+	 * blocks are themselves axis-aligned — and it sweeps and rests flush against the grid. Any other entity
+	 * keeps a world-aligned footprint with only the assembly's world-Y yaw removed, so it turns with a
+	 * turntable but does not tilt with the platform. The full world&lt;-&gt;local rotation is still used for
+	 * the position/motion/result transforms regardless.
+	 */
+	public static Matrix3d entityBoxRotation(Entity entity, AssemblyTransform transform) {
+		if (entity instanceof FallingBlockEntity)
+			return new Matrix3d().asIdentity();
+		return transform.worldToLocalRotationNoWorldYaw();
 	}
 
 	private static double getBounceMultiplier(BlockState state) {

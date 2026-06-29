@@ -303,7 +303,7 @@ public final class AssemblyController {
 	 * falling-block collision in {@link #serverTick()}.
 	 */
 	private void detachFallingBlock(BlockPos local, BlockState state) {
-		if (!(host.assemblyLevel() instanceof ServerLevel serverLevel))
+		if (!(host.assemblyLevel() instanceof ServerLevel))
 			return;
 		StructureBlockInfo below = assembly.getBlocks().get(local.below());
 		BlockState belowState = below == null ? Blocks.AIR.defaultBlockState() : below.state();
@@ -311,8 +311,8 @@ public final class AssemblyController {
 			return; // still supported
 
 		AssemblySimServerLevel sim = simLevel();
-		detachBlock(local, state, averagePlatformVelocity(List.of(local)), sim, serverLevel);
-		applyStructureUpdate(sim, serverLevel);
+		detachBlock(local, state, averagePlatformVelocity(List.of(local)), sim);
+		applyStructureUpdate(sim);
 	}
 
 	/**
@@ -320,15 +320,22 @@ public final class AssemblyController {
 	 * fires — and spawn a real {@link FallingBlockEntity} for it at the block's current rotated world
 	 * position, with the assembly's orientation and the given release {@code velocity}. Does NOT
 	 * re-sync; callers batch one {@link #sync()}.
+	 *
+	 * <p>Position, orientation and {@code velocity} are all in <em>root</em>-world space (the composed
+	 * {@link AssemblyTransform#ofCurrent} walks the whole host chain), and the entity is spawned straight
+	 * into the genuine {@link #rootRealLevel() root world}. We must NOT spawn into the host's immediate
+	 * level: for a nested host that is the parent sim, whose {@code addFreshEntity} would re-apply the
+	 * parent transform on top of an already-world-space pose (a double transform).
 	 */
-	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, AssemblySimServerLevel sim,
-		ServerLevel serverLevel) {
+	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, AssemblySimServerLevel sim) {
 		sim.setBlock(local, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 
+		if (!(rootRealLevel() instanceof ServerLevel rootLevel))
+			return;
 		AssemblyTransform transform = AssemblyTransform.ofCurrent(host);
 		// Feet at the cell's bottom-centre: local x/z centred, y at the block's bottom face.
 		Vec3 feet = transform.localToWorld(new Vec3(local.getX() + 0.5, local.getY(), local.getZ() + 0.5));
-		FallingBlockEntity entity = FallingBlockEntityInvoker.zps$create(serverLevel, feet.x, feet.y, feet.z, state);
+		FallingBlockEntity entity = FallingBlockEntityInvoker.zps$create(rootLevel, feet.x, feet.y, feet.z, state);
 		// Inherit the assembly's current (composed, for a nested assembly) orientation so the
 		// block keeps it while falling.
 		((AssemblyRotatedEntity) entity).zps$setAssemblyRotation(transform.localToWorldRotationQuat());
@@ -336,7 +343,7 @@ public final class AssemblyController {
 		// jerking to a stop); for a multi-block group this is the group average. Sent to clients in
 		// the spawn packet's velocity.
 		entity.setDeltaMovement(velocity);
-		serverLevel.addFreshEntity(entity);
+		rootLevel.addFreshEntity(entity);
 	}
 
 	/**
@@ -345,8 +352,8 @@ public final class AssemblyController {
 	 * {@link AssemblySimServerLevel#setBlock} (which runs the standard block update). Re-invoked when a
 	 * falling block detaches, so collapses cascade.
 	 */
-	private void applyStructureUpdate(AssemblySimServerLevel sim, ServerLevel serverLevel) {
-		detachDisconnected(sim, serverLevel);
+	private void applyStructureUpdate(AssemblySimServerLevel sim) {
+		detachDisconnected(sim);
 		host.markAssemblyChanged();
 		sync();
 	}
@@ -357,7 +364,7 @@ public final class AssemblyController {
 	 * cohesive unit: all its blocks inherit the group's average platform velocity, so the group
 	 * translates together instead of shearing apart.
 	 */
-	private void detachDisconnected(AssemblySimServerLevel sim, ServerLevel serverLevel) {
+	private void detachDisconnected(AssemblySimServerLevel sim) {
 		var blocks = assembly.getBlocks();
 		BlockPos head = host.headLocalPos();
 		if (!blocks.containsKey(head))
@@ -384,7 +391,7 @@ public final class AssemblyController {
 				StructureBlockInfo info = blocks.get(p);
 				if (info == null)
 					continue; // already removed by a cascading shape update
-				detachBlock(p, info.state(), velocity, sim, serverLevel);
+				detachBlock(p, info.state(), velocity, sim);
 			}
 		}
 	}
@@ -501,7 +508,7 @@ public final class AssemblyController {
 		// Remove through the sim level so neighbours get the standard block update (unsupported
 		// falling blocks fall), then collapse anything no longer connected to the head. Re-syncs once.
 		sim.setBlock(local, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-		applyStructureUpdate(sim, serverLevel);
+		applyStructureUpdate(sim);
 	}
 
 	private void spawnAssemblyBreakEffects(ServerLevel serverLevel, BlockPos local, BlockState state,
