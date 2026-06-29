@@ -3,6 +3,7 @@ package com.assemblylib;
 import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.blockentity.ModBlockEntities;
 import com.assemblylib.debug.entity.ModEntities;
+import com.assemblylib.impl.AssemblyClientConfig;
 import com.assemblylib.impl.client.ClientSetup;
 import com.assemblylib.debug.gametest.AssemblyNestingGameTests;
 import com.assemblylib.debug.gametest.AssemblyRedstoneGameTests;
@@ -16,6 +17,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import org.slf4j.Logger;
@@ -42,6 +44,7 @@ public final class AssemblyLib {
         NeoForge.EVENT_BUS.register(AssemblySyncEvents.class);
 
         if (dist == Dist.CLIENT) {
+            modContainer.registerConfig(ModConfig.Type.CLIENT, AssemblyClientConfig.SPEC);
             modEventBus.register(ClientSetup.class);
         }
     }

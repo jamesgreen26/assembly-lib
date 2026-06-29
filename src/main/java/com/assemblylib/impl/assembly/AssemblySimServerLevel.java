@@ -11,7 +11,7 @@ import javax.annotation.Nullable;
 
 import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.mixin.EntityAccessor;
-import net.createmod.catnip.levelWrappers.WrappedServerLevel;
+import com.assemblylib.impl.assembly.level.WrappedServerLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;

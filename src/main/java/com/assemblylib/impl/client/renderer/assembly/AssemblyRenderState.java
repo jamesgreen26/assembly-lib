@@ -69,8 +69,15 @@ public class AssemblyRenderState {
 	@Nullable
 	private List<TickingBE> tickers;
 	private boolean tickersDirty = true;
-	/** Bumped whenever the structure (positions or block states) changes; gates Flywheel/structure rebuilds. */
+	/** Bumped whenever the structure (positions or block states) changes; gates child-BE rebuilds. */
 	private long structureRevision;
+
+	/** The static baked mesh of the assembly's block geometry (built lazily, on the render thread). */
+	@Nullable
+	private AssemblyBakedMesh bakedMesh;
+	/** The assembly the mesh was baked for; the mesh is rebuilt when the assembly identity changes. */
+	@Nullable
+	private Assembly meshAssembly;
 
 	public AssemblyRenderState(Level level, Assembly assembly,
 		@Nullable Supplier<AssemblyTransform> transform, @Nullable AssemblyHost host) {
@@ -128,6 +135,31 @@ public class AssemblyRenderState {
 	/** Counter bumped on every structural change (block added/removed/state-changed); never decreases. */
 	public long getStructureRevision() {
 		return structureRevision;
+	}
+
+	/**
+	 * The baked mesh of the assembly's static block geometry, rebuilt when the assembly identity
+	 * changes (the client builds a fresh {@link Assembly} on every sync). Must be called on the render
+	 * thread — {@link AssemblyBakedMesh#rebuild} touches GPU buffers. {@code worldOrigin} is the
+	 * assembly's world anchor, used to sample biome tint at the right location.
+	 */
+	public AssemblyBakedMesh getOrBuildMesh(BlockPos worldOrigin) {
+		if (bakedMesh == null)
+			bakedMesh = new AssemblyBakedMesh();
+		if (assembly != null && assembly != meshAssembly) {
+			bakedMesh.rebuild(level, assembly, worldOrigin);
+			meshAssembly = assembly;
+		}
+		return bakedMesh;
+	}
+
+	/** Release the baked GPU buffers. Call on the render thread when the host unloads/removes. */
+	public void dispose() {
+		if (bakedMesh != null) {
+			bakedMesh.dispose();
+			bakedMesh = null;
+		}
+		meshAssembly = null;
 	}
 
 	/**

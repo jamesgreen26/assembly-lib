@@ -193,6 +193,10 @@ public final class AssemblyController {
 	/** Remove this host from the client-active registry (called when the host unloads/removes). */
 	public void onClientUnload() {
 		AssemblyHosts.ACTIVE_CLIENT.remove(host);
+		if (renderState != null) {
+			renderState.dispose();
+			renderState = null;
+		}
 	}
 
 	/**

@@ -17,6 +17,9 @@ import net.minecraft.world.phys.Vec3;
  * Flywheel block-entity visual for a Servo Motor's assembly. The host-agnostic rendering lives in
  * {@link AssemblyVisualCore}; this class is the thin {@link AbstractBlockEntityVisual} shell that
  * Flywheel registers per block-entity type and that forwards the visual lifecycle to the core.
+ *
+ * <p>Only draws when the legacy Flywheel renderer is selected (see {@code AssemblyClientConfig});
+ * with the baked-mesh renderer active the core is a no-op and the structure is drawn by the BER.
  */
 public class ServoMotorVisual extends AbstractBlockEntityVisual<ServoMotorBlockEntity>
 	implements DynamicVisual, TickableVisual, ShaderLightVisual {

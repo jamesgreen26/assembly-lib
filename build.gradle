@@ -44,13 +44,14 @@ jar {
 
 repositories {
     mavenCentral()
-    maven { url = "https://maven.createmod.net" }
+    maven { url = "https://maven.createmod.net" }   // Flywheel + Create (and their deps: ponder/catnip)
     maven { url = "https://maven.bawnorton.com/releases" }
     maven {
         name = "Jared's maven"
         url = "https://maven.blamejared.com/"
     }
-    maven { url = "https://maven.tterrag.com/" }
+    maven { url = "https://maven.tterrag.com/" }     // Registrate (transitive dep of Create)
+    maven { url = "https://mvn.devos.one/snapshots" } // Registrate MC1.21 builds (transitive dep of Create)
 }
 
 dependencies {
@@ -62,21 +63,19 @@ dependencies {
         }
     }
 
-    // Ponder bundles catnip (net.createmod.catnip.levelWrappers.*), which the assembly sim
-    // levels extend. Flywheel drives the assembly rendering.
-    implementation(jarJar("net.createmod.ponder:ponder-neoforge:$ponder_version+mc$minecraft_version") {
-        version {
-            strictly "[$ponder_version+mc$minecraft_version,)"
-            prefer "$ponder_version+mc$minecraft_version"
-        }
-    })
-
+    // Flywheel drives the legacy GPU-instanced renderer (AssemblyVisualCore). The renderer is
+    // optional (the baked-mesh renderer is the default), but Flywheel is bundled so the legacy path
+    // is available wherever the mod is installed.
     implementation(jarJar("dev.engine-room.flywheel:flywheel-neoforge-$minecraft_version:$flywheel_version") {
         version {
             strictly "[${flywheel_version},2.0)"
             prefer flywheel_version
         }
     })
+
+    // Create — dev/testing only (not bundled, not used by library code). Lets us assemble real
+    // Create blocks/contraptions in runClient to test the assembly machinery against them.
+    implementation("com.simibubi.create:create-$minecraft_version:$create_version")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.0")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.0")

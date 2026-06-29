@@ -15,10 +15,12 @@
   ],
   "mixins": [
     "AbstractContainerMenuMixin",
+    "BiomeManagerAccessor",
     "ContainerMixin",
     "EntityAccessor",
     "FallingBlockEntityInvoker",
     "FallingBlockEntityRotationMixin",
+    "MinecraftServerAccessor",
     "ServerGamePacketListenerImplAccessor"
   ],
   "injectors": {

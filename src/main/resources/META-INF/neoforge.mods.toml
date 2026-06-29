@@ -28,9 +28,11 @@ versionRange = "[1.21.1,1.22)"
 ordering = "NONE"
 side = "BOTH"
 
+# Optional: powers the legacy GPU-instanced renderer (the baked-mesh renderer is the default and
+# needs no Flywheel). Bundled via jarJar, so it is present, but the mod runs fine without it.
 [[dependencies.assemblylib]]
 modId = "flywheel"
-type = "required"
+type = "optional"
 versionRange = "[1.0,2.0)"
 ordering = "NONE"
 side = "CLIENT"

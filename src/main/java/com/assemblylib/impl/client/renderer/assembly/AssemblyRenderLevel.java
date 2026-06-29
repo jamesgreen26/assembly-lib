@@ -37,8 +37,9 @@ import net.minecraft.world.phys.Vec3;
  * resolved against it are the client variants.
  *
  * <p>Implements Flywheel's {@link VisualizationLevel} marker so its hosted block entities are
- * reported as visualizable — otherwise Flywheel only considers {@code Minecraft#level} supported and
- * would disable the Flywheel visual path / {@code skipVanillaRender} for assembly block entities.
+ * reported as visualizable when the legacy Flywheel renderer is selected — otherwise Flywheel only
+ * considers {@code Minecraft#level} supported and would disable the Flywheel visual path for assembly
+ * block entities. Harmless when the baked-mesh renderer is active.
  */
 public class AssemblyRenderLevel extends AssemblySimLevel implements VisualizationLevel, AssemblyHostLevel {
 

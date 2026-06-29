@@ -28,6 +28,7 @@ import dev.engine_room.flywheel.lib.model.ModelUtil;
 import dev.engine_room.flywheel.lib.model.baked.BlockModelBuilder;
 import dev.engine_room.flywheel.lib.task.PlanMap;
 import dev.engine_room.flywheel.lib.task.RunnablePlan;
+import com.assemblylib.impl.AssemblyClientConfig;
 import com.assemblylib.impl.assembly.Assembly;
 import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.assembly.AssemblyTransform;
@@ -48,6 +49,12 @@ import net.minecraft.world.phys.Vec3;
  * lighting is provided by registering the assembly's world light sections (the block materials sample
  * those sections by world position on the GPU).
  *
+ * <p>This is the <b>legacy</b> renderer, kept alongside the self-contained baked-mesh renderer and
+ * gated by {@link AssemblyClientConfig#useFlywheelRenderer()}: when the baked-mesh renderer is
+ * selected this core builds nothing (and tears down any structure it had built), so the BER's baked
+ * mesh is the only thing drawn. The toggle is re-checked every frame, so switching renderers takes
+ * effect without a restart.
+ *
  * <p>Extracted from the servo motor's block-entity visual so any Flywheel visual (block entity or
  * entity) can drive an assembly: the concrete visual creates one of these, passing its
  * {@link VisualizationContext} and a partial-tick-aware supplier for its render-origin-relative visual position, and
@@ -66,6 +73,9 @@ public class AssemblyVisualCore {
 	private final PlanMap<DynamicVisual, DynamicVisual.Context> dynamicVisuals = new PlanMap<>();
 	private final PlanMap<TickableVisual, TickableVisual.Context> tickableVisuals = new PlanMap<>();
 
+	/** Whether the Flywheel structure/children are currently built (gated by the renderer config). */
+	private boolean flywheelBuilt;
+
 	@org.jetbrains.annotations.Nullable
 	private TransformedInstance structure;
 	@org.jetbrains.annotations.Nullable
@@ -83,12 +93,18 @@ public class AssemblyVisualCore {
 		this.host = host;
 		this.visualPosition = visualPosition;
 		this.embedding = ctx.createEmbedding(Vec3i.ZERO);
-		setEmbeddingTransform(partialTick);
-		setupStructure();
-		setupChildren(partialTick);
+		if (AssemblyClientConfig.useFlywheelRenderer())
+			buildAll(partialTick);
 	}
 
 	// region setup
+
+	private void buildAll(float partialTick) {
+		setEmbeddingTransform(partialTick);
+		setupStructure();
+		setupChildren(partialTick);
+		flywheelBuilt = true;
+	}
 
 	private void setupStructure() {
 		builtAssembly = host.getAssembly();
@@ -100,7 +116,7 @@ public class AssemblyVisualCore {
 			return;
 
 		Model model = new BlockModelBuilder(
-			new AssemblyRenderWorld(host.assemblyLevel(), builtAssembly),
+			new AssemblyRenderWorld(host.assemblyLevel(), builtAssembly, host.assemblyHostBlockPos()),
 			builtAssembly.getBlocks().keySet())
 			// Assembly blocks are lit per-section like normal chunks, not like an entity.
 			.materialFunc((renderType, shaded, ao) -> {
@@ -160,6 +176,19 @@ public class AssemblyVisualCore {
 
 	private void beginFrame(DynamicVisual.Context ctx) {
 		float partialTick = ctx.partialTick();
+		// Config gate: only the selected renderer draws. When the baked-mesh renderer is active, tear
+		// down anything we built so the BER's baked mesh is the sole structure on screen.
+		if (!AssemblyClientConfig.useFlywheelRenderer()) {
+			if (flywheelBuilt)
+				teardown();
+			return;
+		}
+		if (!flywheelBuilt) {
+			// First frame, or the config just flipped back to Flywheel: build now.
+			buildAll(partialTick);
+			checkAndUpdateLightSections();
+			return;
+		}
 		setEmbeddingTransform(partialTick);
 		checkAndUpdateLightSections();
 		// The structure model (block geometry) is rebuilt whenever the assembly is re-synced.
@@ -230,7 +259,8 @@ public class AssemblyVisualCore {
 
 	// endregion
 
-	public void delete() {
+	/** Tear down the structure instance and child visuals, keeping the embedding for possible rebuild. */
+	private void teardown() {
 		if (structure != null) {
 			structure.delete();
 			structure = null;
@@ -239,6 +269,13 @@ public class AssemblyVisualCore {
 		children.clear();
 		dynamicVisuals.clear();
 		tickableVisuals.clear();
+		builtAssembly = null;
+		builtRevision = -1;
+		flywheelBuilt = false;
+	}
+
+	public void delete() {
+		teardown();
 		embedding.delete();
 	}
 

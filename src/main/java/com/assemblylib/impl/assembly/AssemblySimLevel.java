@@ -4,7 +4,7 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
-import net.createmod.catnip.levelWrappers.WrappedLevel;
+import com.assemblylib.impl.assembly.level.WrappedLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.profiling.InactiveProfiler;

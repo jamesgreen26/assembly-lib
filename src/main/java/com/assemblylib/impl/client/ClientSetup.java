@@ -19,9 +19,10 @@ public class ClientSetup {
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
-            // Servo Motor assembly: Flywheel draws the static structure + child block-entity
-            // visuals; the BER always runs to draw captured block entities via their vanilla
-            // renderers (and the whole structure when Flywheel is unavailable).
+            // The BER/entity renderer (AssemblyRenderer) draws the baked structure mesh + captured
+            // block entities. The Flywheel visualizers below are the legacy GPU-instanced path; both
+            // are registered, and AssemblyClientConfig#useFlywheelRenderer chooses which one draws the
+            // structure each frame (the loser is a no-op).
             BlockEntityRenderers.register(ModBlockEntities.SERVO_MOTOR.get(), ServoMotorBlockEntityRenderer::new);
             EntityRenderers.register(ModEntities.ASSEMBLY_HOST.get(), AssemblyHostEntityRenderer::new);
             SimpleBlockEntityVisualizer.builder(ModBlockEntities.SERVO_MOTOR.get())

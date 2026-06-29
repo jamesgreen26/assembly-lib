@@ -664,7 +664,7 @@ public final class AssemblyInteractionClient {
 		RenderType crackType = ModelBakery.DESTROY_TYPES.get(stage);
 		VertexConsumer vc = new SheetedDecalTextureGenerator(crumbling.getBuffer(crackType), pose.last(), 1.0f);
 		Minecraft.getInstance().getBlockRenderer().renderBreakingTexture(info.state(), local,
-			new AssemblyRenderWorld(motor.assemblyLevel(), assembly), pose, vc);
+			new AssemblyRenderWorld(motor.assemblyLevel(), assembly, motor.assemblyHostBlockPos()), pose, vc);
 		pose.popPose();
 	}
 

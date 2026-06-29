@@ -10,9 +10,9 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.world.phys.AABB;
 
 /**
- * Vanilla fallback renderer for a Servo Motor's assembly, used when the Flywheel backend is
- * unavailable. The actual drawing is host-agnostic and lives in {@link AssemblyRenderer}; this class
- * is the thin {@code BlockEntityRenderer} shell registered per block-entity type.
+ * Renderer for a Servo Motor's assembly. The actual drawing is host-agnostic and lives in
+ * {@link AssemblyRenderer} (baked structure mesh + captured block entities); this class is the thin
+ * {@code BlockEntityRenderer} shell registered per block-entity type.
  */
 public class ServoMotorBlockEntityRenderer implements BlockEntityRenderer<ServoMotorBlockEntity> {
 
