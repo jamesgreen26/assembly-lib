@@ -62,8 +62,8 @@ dependencies {
         }
     }
 
-    // Ponder bundles catnip (net.createmod.catnip.levelWrappers.*), which the contraption sim
-    // levels extend. Flywheel drives the contraption rendering.
+    // Ponder bundles catnip (net.createmod.catnip.levelWrappers.*), which the assembly sim
+    // levels extend. Flywheel drives the assembly rendering.
     implementation(jarJar("net.createmod.ponder:ponder-neoforge:$ponder_version+mc$minecraft_version") {
         version {
             strictly "[$ponder_version+mc$minecraft_version,)"

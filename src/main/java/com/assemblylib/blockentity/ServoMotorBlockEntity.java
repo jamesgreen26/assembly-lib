@@ -13,18 +13,18 @@ import javax.annotation.Nullable;
 
 import com.assemblylib.block.ModBlocks;
 import com.assemblylib.block.ServoMotorHeadBlock;
-import com.assemblylib.client.renderer.contraption.ContraptionRenderState;
-import com.assemblylib.contraption.Contraption;
-import com.assemblylib.contraption.ContraptionBlockGetter;
-import com.assemblylib.contraption.ContraptionHostLevel;
-import com.assemblylib.contraption.ContraptionPlacementUtil;
-import com.assemblylib.contraption.ContraptionPlaceContext;
-import com.assemblylib.contraption.ContraptionRotatedEntity;
+import com.assemblylib.client.renderer.assembly.AssemblyRenderState;
+import com.assemblylib.assembly.Assembly;
+import com.assemblylib.assembly.AssemblyBlockGetter;
+import com.assemblylib.assembly.AssemblyHostLevel;
+import com.assemblylib.assembly.AssemblyPlacementUtil;
+import com.assemblylib.assembly.AssemblyPlaceContext;
+import com.assemblylib.assembly.AssemblyRotatedEntity;
 import com.assemblylib.AssemblyLib;
-import com.assemblylib.contraption.ContraptionSimServerLevel;
-import com.assemblylib.contraption.ContraptionTransform;
-import com.assemblylib.contraption.collision.ContraptionCollider;
-import com.assemblylib.contraption.util.ContraptionMath;
+import com.assemblylib.assembly.AssemblySimServerLevel;
+import com.assemblylib.assembly.AssemblyTransform;
+import com.assemblylib.assembly.collision.AssemblyCollider;
+import com.assemblylib.assembly.util.AssemblyMath;
 import com.assemblylib.mixin.FallingBlockEntityInvoker;
 import com.assemblylib.mixin.ServerGamePacketListenerImplAccessor;
 import net.minecraft.core.BlockPos;
@@ -67,7 +67,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
- * Hosts a {@link Contraption} directly (no separate entity). On toggle it
+ * Hosts a {@link Assembly} directly (no separate entity). On toggle it
  * assembles the connected blocks in front of it, spins them around the block's
  * facing axis, and writes them back to the world on disassembly. Behaves like
  * Create's Mechanical Bearing, but the structure lives in this BlockEntity.
@@ -80,11 +80,11 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	/** Client-side set of currently-assembled motors, for interaction raytracing. */
 	public static final Set<ServoMotorBlockEntity> ACTIVE_CLIENT = ConcurrentHashMap.newKeySet();
 
-	/** Max squared distance from a player to a contraption block for break/place. */
+	/** Max squared distance from a player to a assembly block for break/place. */
 	private static final double INTERACT_RANGE_SQR = 7.0 * 7.0;
 
 	@Nullable
-	private Contraption contraption;
+	private Assembly assembly;
 	private boolean running;
 	/** Set while we tear the motor down ourselves so {@link #onMotorRemoved} doesn't double-drop. */
 	private boolean suppressRemovalDrops;
@@ -95,11 +95,11 @@ public class ServoMotorBlockEntity extends BlockEntity {
 
 	/** Client-only cache of reconstructed block entities for rendering. */
 	@Nullable
-	private ContraptionRenderState renderState;
+	private AssemblyRenderState renderState;
 
-	/** Server-only cached simulation level (see {@link #simLevel()}); rebuilt when the contraption changes. */
+	/** Server-only cached simulation level (see {@link #simLevel()}); rebuilt when the assembly changes. */
 	@Nullable
-	private ContraptionSimServerLevel simLevel;
+	private AssemblySimServerLevel simLevel;
 
 	/** Set when a scheduled block tick mutates the structure, so {@link #serverTick()} re-syncs once. */
 	private boolean simNeedsSync;
@@ -117,28 +117,28 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	@Nullable
-	public Contraption getContraption() {
-		return contraption;
+	public Assembly getAssembly() {
+		return assembly;
 	}
 
 	/**
-	 * Client-only: replace the contraption with a predicted version (after a local
+	 * Client-only: replace the assembly with a predicted version (after a local
 	 * break/place) so it renders/collides immediately, before the authoritative
 	 * server sync arrives and replaces it. A fresh instance triggers the renderer
 	 * and render-state caches to rebuild (they key on identity).
 	 */
-	public void setContraptionClient(Contraption predicted) {
+	public void setAssemblyClient(Assembly predicted) {
 		if (level != null && level.isClientSide)
-			contraption = predicted;
+			assembly = predicted;
 	}
 
 	public boolean isRunning() {
 		return running;
 	}
 
-	/** Number of blocks in the contraption (head included), at least 1, for break-speed scaling. */
-	public int getContraptionBlockCount() {
-		return contraption == null ? 1 : Math.max(1, contraption.getBlocks().size());
+	/** Number of blocks in the assembly (head included), at least 1, for break-speed scaling. */
+	public int getAssemblyBlockCount() {
+		return assembly == null ? 1 : Math.max(1, assembly.getBlocks().size());
 	}
 
 	/** Local position of the head block: the motor's own cell, relative to the anchor in front. */
@@ -147,7 +147,7 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	public float getInterpolatedAngle(float partialTick) {
-		return ContraptionMath.angleLerp(partialTick, prevAngle, angle);
+		return AssemblyMath.angleLerp(partialTick, prevAngle, angle);
 	}
 
 	/** Raw current rotation angle in degrees (server-authoritative). */
@@ -166,32 +166,32 @@ public class ServoMotorBlockEntity extends BlockEntity {
 
 	/**
 	 * The Servo Motor that hosts this one, when this motor is itself a block inside another
-	 * contraption (its level is a {@link ContraptionHostLevel} — the server sim level or the client
+	 * assembly (its level is a {@link AssemblyHostLevel} — the server sim level or the client
 	 * render level). Returns {@code null} for a motor anchored directly in the real world. Drives
-	 * {@link ContraptionTransform} composition for nested contraptions; dist-safe (dispatches on the
+	 * {@link AssemblyTransform} composition for nested assemblys; dist-safe (dispatches on the
 	 * interface, never a client-only type).
 	 */
 	@Nullable
 	public ServoMotorBlockEntity hostMotor() {
-		return level instanceof ContraptionHostLevel host ? host.getContraptionHostMotor() : null;
+		return level instanceof AssemblyHostLevel host ? host.getAssemblyHostMotor() : null;
 	}
 
 	/**
 	 * Client-only: the live reconstructed block entities of the captured structure. The render state
 	 * persists across syncs and reconciles its instances in place (the client builds a fresh
-	 * contraption every sync), so block-entity renderers keep their animation state. Returns null when
+	 * assembly every sync), so block-entity renderers keep their animation state. Returns null when
 	 * nothing is assembled or off-client.
 	 */
 	@Nullable
-	public ContraptionRenderState getRenderState() {
-		if (level == null || contraption == null || !level.isClientSide) {
+	public AssemblyRenderState getRenderState() {
+		if (level == null || assembly == null || !level.isClientSide) {
 			renderState = null;
 			return null;
 		}
 		if (renderState == null)
-			renderState = new ContraptionRenderState(level, contraption, () -> ContraptionTransform.ofCurrent(this), this);
+			renderState = new AssemblyRenderState(level, assembly, () -> AssemblyTransform.ofCurrent(this), this);
 		else
-			renderState.update(contraption);
+			renderState.update(assembly);
 		return renderState;
 	}
 
@@ -201,11 +201,11 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		prevAngle = angle;
 
 		// Pre-assembled on placement; lazily seed the head for blocks created another way
-		// (e.g. /setblock) so the contraption always exists.
-		if (contraption == null)
-			initContraption();
+		// (e.g. /setblock) so the assembly always exists.
+		if (assembly == null)
+			initAssembly();
 
-		// Spins only while powered; the contraption is permanent either way.
+		// Spins only while powered; the assembly is permanent either way.
 		boolean powered = level.hasNeighborSignal(worldPosition);
 		if (powered != running) {
 			running = powered;
@@ -213,15 +213,15 @@ public class ServoMotorBlockEntity extends BlockEntity {
 			sendData();
 		}
 
-		if (contraption == null)
+		if (assembly == null)
 			return;
 
-		// Drive the contraption's own block-tick queue (falling blocks, and redstone components
+		// Drive the assembly's own block-tick queue (falling blocks, and redstone components
 		// like repeaters/observers/button-release), kept separate from the outer world's tick queue.
-		tickContraptionBlocks();
+		tickAssemblyBlocks();
 		// Tick live block entities (furnaces smelt, hoppers move items, …). Any structural change
 		// they make flips simNeedsSync via the sim level's onNeedsSync callback.
-		tickContraptionBlockEntities();
+		tickAssemblyBlockEntities();
 		if (simNeedsSync) {
 			simNeedsSync = false;
 			sendData();
@@ -230,7 +230,7 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		if (running)
 			angle = (angle + DEGREES_PER_TICK) % 360;
 		// Resolve non-player entities here (players are resolved client-side). A stopped
-		// contraption is still solid; only the carry motion goes to zero.
+		// assembly is still solid; only the carry motion goes to zero.
 		collide(entity -> !(entity instanceof Player));
 		// Riders stand on blocks that aren't in the world, so keep the server from
 		// kicking them for "floating".
@@ -240,8 +240,8 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	public void clientTick() {
 		prevAngle = angle;
 		// Targeting/building/breaking work even while stopped, so track any motor that has a
-		// contraption — not just spinning ones.
-		if (contraption == null) {
+		// assembly — not just spinning ones.
+		if (assembly == null) {
 			ACTIVE_CLIENT.remove(this);
 			return;
 		}
@@ -252,21 +252,21 @@ public class ServoMotorBlockEntity extends BlockEntity {
 
 		// Client-tick the captured block entities so their renderers animate like normal world BEs
 		// (chest lids, spawner spin, campfire smoke, conduit frames, …).
-		ContraptionRenderState rs = getRenderState();
+		AssemblyRenderState rs = getRenderState();
 		if (rs != null)
 			rs.tick();
 
-		// Local-player collision is driven from ContraptionInteractionClient (client-only)
+		// Local-player collision is driven from AssemblyInteractionClient (client-only)
 		// so this class never references client types and stays dist-safe.
 
 		// Most entities interpolate toward their server-synced position on the client
 		// (Entity#baseTick), so the server's authoritative collision result is what the
 		// client renders — smooth. FallingBlockEntity is the exception: its tick runs raw
 		// physics every tick and never calls super.tick()/interpolates, so on the client it
-		// free-falls straight through the contraption (whose blocks aren't real world blocks)
+		// free-falls straight through the assembly (whose blocks aren't real world blocks)
 		// and only snaps back when a position packet lands — which reads as jitter. Resolve
 		// it here too so the client prediction stays glued to the platform, matching the
-		// server. (Create gets this for free: its contraption is an entity that runs
+		// server. (Create gets this for free: its assembly is an entity that runs
 		// collideEntities on both sides.)
 		collide(entity -> entity instanceof FallingBlockEntity || entity instanceof ItemEntity);
 	}
@@ -278,69 +278,69 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	/**
-	 * The server simulation level bound to this motor's contraption: writes/ticks mutate the
-	 * contraption and mark the BE dirty, and — because it is a real {@link ServerLevel}
-	 * ({@link ContraptionSimServerLevel}) — scheduled ticks and redstone run natively. Callers batch
+	 * The server simulation level bound to this motor's assembly: writes/ticks mutate the
+	 * assembly and mark the BE dirty, and — because it is a real {@link ServerLevel}
+	 * ({@link AssemblySimServerLevel}) — scheduled ticks and redstone run natively. Callers batch
 	 * a single {@link #sendData()} after an operation, so a multi-block change (e.g. a structural
 	 * collapse) is one network re-sync. Cached (constructing it builds a full ServerLevel) and
-	 * rebuilt when the contraption identity changes. Server-only.
+	 * rebuilt when the assembly identity changes. Server-only.
 	 */
-	private ContraptionSimServerLevel simLevel() {
-		if (simLevel == null || simLevel.getContraption() != contraption)
-			simLevel = new ContraptionSimServerLevel((ServerLevel) level, contraption, worldPosition, this::setChanged,
-				() -> simNeedsSync = true, () -> ContraptionTransform.ofCurrent(this));
+	private AssemblySimServerLevel simLevel() {
+		if (simLevel == null || simLevel.getAssembly() != assembly)
+			simLevel = new AssemblySimServerLevel((ServerLevel) level, assembly, worldPosition, this::setChanged,
+				() -> simNeedsSync = true, () -> AssemblyTransform.ofCurrent(this));
 		return simLevel;
 	}
 
 	/**
-	 * The live (server-side) block entity at a contraption-local position, or {@code null} if there is
+	 * The live (server-side) block entity at a assembly-local position, or {@code null} if there is
 	 * none. Lazily created and cached by the simulation level. Server-only.
 	 */
 	@Nullable
-	public BlockEntity getContraptionBlockEntity(BlockPos local) {
-		if (contraption == null || !(level instanceof ServerLevel))
+	public BlockEntity getAssemblyBlockEntity(BlockPos local) {
+		if (assembly == null || !(level instanceof ServerLevel))
 			return null;
 		return simLevel().getBlockEntity(local);
 	}
 
 	/**
-	 * The live Servo Motor reconstructed at contraption-local cell {@code local}, when this motor hosts
-	 * a <em>nested</em> contraption there — or {@code null} if that cell holds no motor. Dist-aware: the
+	 * The live Servo Motor reconstructed at assembly-local cell {@code local}, when this motor hosts
+	 * a <em>nested</em> assembly there — or {@code null} if that cell holds no motor. Dist-aware: the
 	 * server uses the sim level's live block entity, the client the render state's. Used to walk a
-	 * {@link com.assemblylib.contraption.ContraptionPath} down to an innermost nested motor.
+	 * {@link com.assemblylib.assembly.AssemblyPath} down to an innermost nested motor.
 	 */
 	@Nullable
 	public ServoMotorBlockEntity getNestedMotor(BlockPos local) {
 		BlockEntity be;
 		if (level != null && level.isClientSide) {
-			ContraptionRenderState rs = getRenderState();
+			AssemblyRenderState rs = getRenderState();
 			be = rs == null ? null : rs.getBlockEntity(local);
 		} else {
-			be = getContraptionBlockEntity(local);
+			be = getAssemblyBlockEntity(local);
 		}
 		return be instanceof ServoMotorBlockEntity motor ? motor : null;
 	}
 
-	/** Run the contraption's own block-tick queue once (server-side). */
-	private void tickContraptionBlocks() {
+	/** Run the assembly's own block-tick queue once (server-side). */
+	private void tickAssemblyBlocks() {
 		if (!(level instanceof ServerLevel serverLevel))
 			return;
-		ContraptionSimServerLevel sim = simLevel();
-		contraption.getBlockTicks().tick(serverLevel.getGameTime(), 65536,
-			(local, block) -> onContraptionBlockTick(local, block, sim, serverLevel));
+		AssemblySimServerLevel sim = simLevel();
+		assembly.getBlockTicks().tick(serverLevel.getGameTime(), 65536,
+			(local, block) -> onAssemblyBlockTick(local, block, sim, serverLevel));
 	}
 
 	/**
-	 * Tick the contraption's live block entities once (server-side), so furnaces smelt, hoppers move
+	 * Tick the assembly's live block entities once (server-side), so furnaces smelt, hoppers move
 	 * items, brewing stands brew, etc. A misbehaving BE must not kill the motor tick, so each tick is
 	 * isolated. Block-entity-driven structural changes (e.g. a furnace toggling LIT via setBlock) flip
-	 * {@code simNeedsSync} through the sim level, re-syncing the contraption to clients.
+	 * {@code simNeedsSync} through the sim level, re-syncing the assembly to clients.
 	 */
-	private void tickContraptionBlockEntities() {
+	private void tickAssemblyBlockEntities() {
 		if (!(level instanceof ServerLevel))
 			return;
-		ContraptionSimServerLevel sim = simLevel();
-		for (ContraptionSimServerLevel.TickingBE ticking : sim.getTickingBlockEntities()) {
+		AssemblySimServerLevel sim = simLevel();
+		for (AssemblySimServerLevel.TickingBE ticking : sim.getTickingBlockEntities()) {
 			BlockPos local = ticking.pos();
 			BlockEntity be = ticking.be();
 			BlockState state = sim.getBlockState(local);
@@ -349,7 +349,7 @@ public class ServoMotorBlockEntity extends BlockEntity {
 			try {
 				ticking.ticker().tick(sim, local, state, be);
 			} catch (Exception e) {
-				AssemblyLib.LOGGER.error("Contraption block entity at {} threw while ticking", local, e);
+				AssemblyLib.LOGGER.error("Assembly block entity at {} threw while ticking", local, e);
 			}
 		}
 	}
@@ -358,13 +358,13 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	 * Ticker callback for a due scheduled block tick: re-validate the cell against the scheduled
 	 * block, then either run custom falling-block handling or the block's own scheduled tick.
 	 */
-	private void onContraptionBlockTick(BlockPos local, Block block, ContraptionSimServerLevel sim,
+	private void onAssemblyBlockTick(BlockPos local, Block block, AssemblySimServerLevel sim,
 		ServerLevel serverLevel) {
-		StructureBlockInfo info = contraption.getBlocks().get(local);
+		StructureBlockInfo info = assembly.getBlocks().get(local);
 		if (info == null || !info.state().is(block))
 			return;
 		// Falling blocks (sand/gravel/concrete powder/anvils) get custom handling: if unsupported they
-		// detach into a real FallingBlockEntity that inherits the contraption's rotation and platform
+		// detach into a real FallingBlockEntity that inherits the assembly's rotation and platform
 		// velocity (exactly like a group that splits off). We must NOT run vanilla FallingBlock#tick,
 		// which would instead spawn a plain entity at the local position and drop the block.
 		if (block instanceof FallingBlock) {
@@ -386,12 +386,12 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	private void detachFallingBlock(BlockPos local, BlockState state) {
 		if (!(level instanceof ServerLevel serverLevel))
 			return;
-		StructureBlockInfo below = contraption.getBlocks().get(local.below());
+		StructureBlockInfo below = assembly.getBlocks().get(local.below());
 		BlockState belowState = below == null ? Blocks.AIR.defaultBlockState() : below.state();
 		if (!FallingBlock.isFree(belowState))
 			return; // still supported
 
-		ContraptionSimServerLevel sim = simLevel();
+		AssemblySimServerLevel sim = simLevel();
 		detachBlock(local, state, averagePlatformVelocity(List.of(local)), sim, serverLevel);
 		applyStructureUpdate(sim, serverLevel);
 	}
@@ -400,20 +400,20 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	 * Remove the block at {@code local} through the simulation level — so the standard block update
 	 * fires (e.g. a falling block above it reschedules its fall) — and spawn a real
 	 * {@link FallingBlockEntity} for it at the block's current rotated world position, with the
-	 * contraption's orientation and the given release {@code velocity}. Does NOT re-sync; callers
+	 * assembly's orientation and the given release {@code velocity}. Does NOT re-sync; callers
 	 * batch one {@link #sendData()}.
 	 */
-	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, ContraptionSimServerLevel sim,
+	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, AssemblySimServerLevel sim,
 		ServerLevel serverLevel) {
 		sim.setBlock(local, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 
-		ContraptionTransform transform = ContraptionTransform.ofCurrent(this);
+		AssemblyTransform transform = AssemblyTransform.ofCurrent(this);
 		// Feet at the cell's bottom-centre: local x/z centred, y at the block's bottom face.
 		Vec3 feet = transform.localToWorld(new Vec3(local.getX() + 0.5, local.getY(), local.getZ() + 0.5));
 		FallingBlockEntity entity = FallingBlockEntityInvoker.zps$create(serverLevel, feet.x, feet.y, feet.z, state);
-		// Inherit the contraption's current (composed, for a nested contraption) orientation so the
+		// Inherit the assembly's current (composed, for a nested assembly) orientation so the
 		// block keeps it while falling.
-		((ContraptionRotatedEntity) entity).zps$setContraptionRotation(transform.localToWorldRotationQuat());
+		((AssemblyRotatedEntity) entity).zps$setAssemblyRotation(transform.localToWorldRotationQuat());
 		// Release it with the platform velocity (a spinning detach continues smoothly instead of
 		// jerking to a stop); for a multi-block group this is the group average. Sent to clients in
 		// the spawn packet's velocity.
@@ -424,10 +424,10 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	/**
 	 * Structural update after a removal: collapse anything no longer connected to the head, then
 	 * re-sync once. The falling-block re-evaluation is handled by the removal itself going through
-	 * {@link ContraptionSimServerLevel#setBlock} (which runs the standard block update). Re-invoked when a
+	 * {@link AssemblySimServerLevel#setBlock} (which runs the standard block update). Re-invoked when a
 	 * falling block detaches, so collapses cascade.
 	 */
-	private void applyStructureUpdate(ContraptionSimServerLevel sim, ServerLevel serverLevel) {
+	private void applyStructureUpdate(AssemblySimServerLevel sim, ServerLevel serverLevel) {
 		detachDisconnected(sim, serverLevel);
 		setChanged();
 		sendData();
@@ -439,8 +439,8 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	 * cohesive unit: all its blocks inherit the group's average platform velocity, so the group
 	 * translates together instead of shearing apart.
 	 */
-	private void detachDisconnected(ContraptionSimServerLevel sim, ServerLevel serverLevel) {
-		var blocks = contraption.getBlocks();
+	private void detachDisconnected(AssemblySimServerLevel sim, ServerLevel serverLevel) {
+		var blocks = assembly.getBlocks();
 		BlockPos head = headLocalPos();
 		if (!blocks.containsKey(head))
 			return;
@@ -498,8 +498,8 @@ public class ServoMotorBlockEntity extends BlockEntity {
 
 	/** Average platform velocity over a group of local cells, for releasing it as a cohesive unit. */
 	private Vec3 averagePlatformVelocity(List<BlockPos> group) {
-		ContraptionTransform now = ContraptionTransform.ofCurrent(this);
-		ContraptionTransform next = ContraptionTransform.ofIntendedNext(this);
+		AssemblyTransform now = AssemblyTransform.ofCurrent(this);
+		AssemblyTransform next = AssemblyTransform.ofIntendedNext(this);
 		Vec3 sum = Vec3.ZERO;
 		for (BlockPos p : group)
 			sum = sum.add(next.localBlockCenterToWorld(p).subtract(now.localBlockCenterToWorld(p)));
@@ -511,37 +511,37 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	// region assembly
 
 	/**
-	 * Seed the contraption with just the Servo Motor Head at the motor's own cell (on the
-	 * rotation axis, so it spins in place). The rest of the contraption is built outward off
+	 * Seed the assembly with just the Servo Motor Head at the motor's own cell (on the
+	 * rotation axis, so it spins in place). The rest of the assembly is built outward off
 	 * the head via in-flight placement. The motor is never disassembled.
 	 */
-	public void initContraption() {
-		if (level == null || level.isClientSide || contraption != null)
+	public void initAssembly() {
+		if (level == null || level.isClientSide || assembly != null)
 			return;
 
 		Direction facing = getFacing();
 		rotationAxis = facing.getAxis();
 		BlockPos anchor = worldPosition.relative(facing);
-		Contraption next = new Contraption();
+		Assembly next = new Assembly();
 		next.setAnchor(anchor);
 		BlockState headState = ModBlocks.SERVO_MOTOR_HEAD.get().defaultBlockState()
 			.setValue(ServoMotorHeadBlock.FACING, facing);
 		next.putBlock(headLocalPos(), headState, null, null);
 
-		contraption = next;
+		assembly = next;
 		angle = 0;
 		prevAngle = 0;
 		setChanged();
 		sendData();
 	}
 
-	/** Called from the block when the motor is broken: drop every contraption block as items. */
+	/** Called from the block when the motor is broken: drop every assembly block as items. */
 	public void onMotorRemoved() {
 		if (level == null || level.isClientSide)
 			return;
-		if (!suppressRemovalDrops && contraption != null)
-			dropContraptionLoot(ItemStack.EMPTY);
-		contraption = null;
+		if (!suppressRemovalDrops && assembly != null)
+			dropAssemblyLoot(ItemStack.EMPTY);
+		assembly = null;
 		running = false;
 	}
 
@@ -550,19 +550,19 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	// region in-flight editing (break / place)
 
 	/** True if {@code player} is close enough to the rotated world position of a local block. */
-	private boolean inReach(BlockPos local, ServerPlayer player, ContraptionTransform transform) {
+	private boolean inReach(BlockPos local, ServerPlayer player, AssemblyTransform transform) {
 		return player.position().distanceToSqr(transform.localBlockCenterToWorld(local)) <= INTERACT_RANGE_SQR;
 	}
 
 	/** Mine a single block out of the structure: drops, particles/sound, and structure update. */
-	public void breakContraptionBlock(BlockPos local, ServerPlayer player) {
-		if (level == null || level.isClientSide || contraption == null)
+	public void breakAssemblyBlock(BlockPos local, ServerPlayer player) {
+		if (level == null || level.isClientSide || assembly == null)
 			return;
-		StructureBlockInfo info = contraption.getBlocks().get(local);
+		StructureBlockInfo info = assembly.getBlocks().get(local);
 		if (info == null)
 			return;
 		ServerLevel serverLevel = (ServerLevel) level;
-		ContraptionTransform transform = ContraptionTransform.ofCurrent(this);
+		AssemblyTransform transform = AssemblyTransform.ofCurrent(this);
 		if (!inReach(local, player, transform))
 			return;
 
@@ -575,23 +575,23 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		BlockState state = info.state();
 		BlockPos worldPos = BlockPos.containing(transform.localBlockCenterToWorld(local));
 		ItemStack tool = player.getMainHandItem();
-		ContraptionSimServerLevel sim = simLevel();
+		AssemblySimServerLevel sim = simLevel();
 
 		if (!player.isCreative() && serverLevel.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS)) {
 			popBlockLoot(serverLevel, state, liveBlockEntityNbt(sim, local, info), worldPos, player, tool);
 			state.spawnAfterBreak(serverLevel, worldPos, tool, true);
 		}
 
-		spawnContraptionBreakEffects(serverLevel, local, state, transform);
+		spawnAssemblyBreakEffects(serverLevel, local, state, transform);
 		// Remove through the sim level so neighbours get the standard block update (unsupported
 		// falling blocks fall), then collapse anything no longer connected to the head. Re-syncs once.
 		sim.setBlock(local, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 		applyStructureUpdate(sim, serverLevel);
 	}
 
-	private void spawnContraptionBreakEffects(ServerLevel serverLevel, BlockPos local, BlockState state,
-		ContraptionTransform transform) {
-		if (contraption == null || state.isAir())
+	private void spawnAssemblyBreakEffects(ServerLevel serverLevel, BlockPos local, BlockState state,
+		AssemblyTransform transform) {
+		if (assembly == null || state.isAir())
 			return;
 
 		Vec3 worldCenter = transform.localBlockCenterToWorld(local);
@@ -600,7 +600,7 @@ public class ServoMotorBlockEntity extends BlockEntity {
 			SoundSource.BLOCKS, (sound.getVolume() + 1.0f) / 2.0f, sound.getPitch() * 0.8f);
 
 		BlockParticleOption particle = new BlockParticleOption(ParticleTypes.BLOCK, state);
-		VoxelShape shape = state.getShape(new ContraptionBlockGetter(contraption), local);
+		VoxelShape shape = state.getShape(new AssemblyBlockGetter(assembly), local);
 		shape.forAllBoxes((minX, minY, minZ, maxX, maxY, maxZ) -> {
 			double sizeX = Math.min(1.0D, maxX - minX);
 			double sizeY = Math.min(1.0D, maxY - minY);
@@ -620,7 +620,7 @@ public class ServoMotorBlockEntity extends BlockEntity {
 							local.getY() + relY * sizeY + minY,
 							local.getZ() + relZ * sizeZ + minZ);
 						Vec3 worldParticle = transform.localToWorld(localParticle);
-						Vec3 velocity = ContraptionMath.rotate(new Vec3(relX - 0.5D, relY - 0.5D, relZ - 0.5D),
+						Vec3 velocity = AssemblyMath.rotate(new Vec3(relX - 0.5D, relY - 0.5D, relZ - 0.5D),
 							transform.angle(), transform.axis());
 						serverLevel.sendParticles(particle, worldParticle.x, worldParticle.y, worldParticle.z, 0,
 							velocity.x, velocity.y, velocity.z, 1.0D);
@@ -630,7 +630,7 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		});
 	}
 
-	/** Destroy the whole motor: drop the motor item and every contraption block, then remove it. */
+	/** Destroy the whole motor: drop the motor item and every assembly block, then remove it. */
 	private void breakWholeMotor(ServerPlayer player) {
 		ServerLevel serverLevel = (ServerLevel) level;
 		if (serverLevel == null) return;
@@ -638,17 +638,17 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		serverLevel.removeBlock(worldPosition, false);
 	}
 
-	/** Drop the loot of every contraption block except the (unobtainable) head. */
-	private void dropContraptionLoot(ItemStack tool) {
-		if (level == null || level.isClientSide || contraption == null)
+	/** Drop the loot of every assembly block except the (unobtainable) head. */
+	private void dropAssemblyLoot(ItemStack tool) {
+		if (level == null || level.isClientSide || assembly == null)
 			return;
 		ServerLevel serverLevel = (ServerLevel) level;
 		if (!serverLevel.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS))
 			return;
 
 		BlockPos headLocal = headLocalPos();
-		ContraptionSimServerLevel sim = simLevel();
-		for (var entry : contraption.getBlocks().entrySet()) {
+		AssemblySimServerLevel sim = simLevel();
+		for (var entry : assembly.getBlocks().entrySet()) {
 			if (entry.getKey().equals(headLocal))
 				continue;
 			popBlockLoot(serverLevel, entry.getValue().state(),
@@ -657,11 +657,11 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	/**
-	 * The freshest block-entity NBT for a contraption cell: the live BE's current state if one is
+	 * The freshest block-entity NBT for a assembly cell: the live BE's current state if one is
 	 * loaded (so a broken chest drops its current contents), else the captured {@code beNbt}.
 	 */
 	@Nullable
-	private CompoundTag liveBlockEntityNbt(ContraptionSimServerLevel sim, BlockPos local, StructureBlockInfo info) {
+	private CompoundTag liveBlockEntityNbt(AssemblySimServerLevel sim, BlockPos local, StructureBlockInfo info) {
 		BlockEntity live = sim.getBlockEntity(local);
 		if (live != null && level != null)
 			return live.saveWithFullMetadata(level.registryAccess());
@@ -684,40 +684,40 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	/** Place the player's held block into the structure with full vanilla placement context. */
-	public boolean placeContraptionBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
+	public boolean placeAssemblyBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
 		InteractionHand hand) {
-		if (level == null || level.isClientSide || contraption == null)
+		if (level == null || level.isClientSide || assembly == null)
 			return false;
-		if (!contraption.getBlocks().containsKey(local))
+		if (!assembly.getBlocks().containsKey(local))
 			return false;
 		ItemStack stack = player.getItemInHand(hand);
 		if (!(stack.getItem() instanceof BlockItem))
 			return false;
 
 		ServerLevel serverLevel = (ServerLevel) level;
-		ContraptionTransform transform = ContraptionTransform.ofCurrent(this);
+		AssemblyTransform transform = AssemblyTransform.ofCurrent(this);
 		if (!inReach(local, player, transform))
 			return false;
 
-		// Overlay exposing the contraption's blocks at their local positions, so
+		// Overlay exposing the assembly's blocks at their local positions, so
 		// getStateForPlacement sees in-structure neighbours (fences/walls/redstone/stairs)
-		// and in-structure side-effects (FallingBlock#onPlace) read/write the contraption.
-		ContraptionSimServerLevel sim = simLevel();
-		ContraptionPlaceContext.Placed placed =
-			ContraptionPlaceContext.resolve(sim, player, hand, stack, local, localFace, localHit, transform);
+		// and in-structure side-effects (FallingBlock#onPlace) read/write the assembly.
+		AssemblySimServerLevel sim = simLevel();
+		AssemblyPlaceContext.Placed placed =
+			AssemblyPlaceContext.resolve(sim, player, hand, stack, local, localFace, localHit, transform);
 		if (placed == null)
 			return false;
 
 		BlockPos placePos = placed.pos();
 		BlockState placeState = placed.state();
-		if (!ContraptionPlacementUtil.isUnobstructed(serverLevel, sim, player, placePos, placeState, transform))
+		if (!AssemblyPlacementUtil.isUnobstructed(serverLevel, sim, player, placePos, placeState, transform))
 			return false;
 
-		if (!ContraptionPlacementUtil.placeBlock(serverLevel, sim, contraption, player, stack, placed))
+		if (!AssemblyPlacementUtil.placeBlock(serverLevel, sim, assembly, player, stack, placed))
 			return false;
 		placeState = sim.getBlockState(placePos);
 		// Placement side-effects (e.g. a FallingBlock scheduling its fall, redstone components
-		// notifying neighbours) now run inside ContraptionSimServerLevel#setBlock via the block
+		// notifying neighbours) now run inside AssemblySimServerLevel#setBlock via the block
 		// lifecycle, so no explicit onPlace is needed here.
 		if (!player.isCreative())
 			stack.shrink(1);
@@ -735,22 +735,22 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	 * Right-click a block in the structure (buttons, levers, doors, trapdoors, pressure plates, …).
 	 * Runs the block's vanilla use logic against the server simulation level, so its side-effects —
 	 * toggling {@code OPEN}/{@code POWERED}, scheduling the button-release tick, redstone neighbour
-	 * updates, sounds — all happen against the contraption. Mirrors vanilla's right-click order
+	 * updates, sounds — all happen against the assembly. Mirrors vanilla's right-click order
 	 * (held-item block interaction first, then the block's own use), then re-syncs once.
 	 */
-	public boolean useContraptionBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
+	public boolean useAssemblyBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
 		InteractionHand hand) {
-		if (level == null || level.isClientSide || contraption == null)
+		if (level == null || level.isClientSide || assembly == null)
 			return false;
-		StructureBlockInfo info = contraption.getBlocks().get(local);
+		StructureBlockInfo info = assembly.getBlocks().get(local);
 		if (info == null)
 			return false;
 
-		ContraptionTransform transform = ContraptionTransform.ofCurrent(this);
+		AssemblyTransform transform = AssemblyTransform.ofCurrent(this);
 		if (!inReach(local, player, transform))
 			return false;
 
-		ContraptionSimServerLevel sim = simLevel();
+		AssemblySimServerLevel sim = simLevel();
 		BlockState state = info.state();
 		BlockHitResult hit = new BlockHitResult(localHit, localFace, local, false);
 		ItemStack stack = player.getItemInHand(hand);
@@ -778,14 +778,14 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	// region collision
 
 	private void collide(Predicate<Entity> shouldCollide) {
-		ContraptionTransform transform = ContraptionTransform.ofCurrent(this);
+		AssemblyTransform transform = AssemblyTransform.ofCurrent(this);
 		AABB worldBounds = computeWorldBounds(transform);
-		ContraptionCollider.collideEntities(rootRealLevel(), transform, contraption, worldBounds,
+		AssemblyCollider.collideEntities(rootRealLevel(), transform, assembly, worldBounds,
 			this::getContactPointMotion, shouldCollide, this::captureLandedBlock);
 	}
 
 	/**
-	 * The genuine outer world the contraption's entities live in. For a root motor this is {@link #level};
+	 * The genuine outer world the assembly's entities live in. For a root motor this is {@link #level};
 	 * for a nested motor it walks up the host chain (whose intermediate levels are sim/render wrappers
 	 * with no entities of their own). Dist-safe — uses {@link #hostMotor()}, never a wrapper type.
 	 */
@@ -798,24 +798,24 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	/**
-	 * Capture a {@link FallingBlockEntity} that has landed on the contraption into the
-	 * structure at {@code localCell}, so it becomes part of the contraption (the inverse of
+	 * Capture a {@link FallingBlockEntity} that has landed on the assembly into the
+	 * structure at {@code localCell}, so it becomes part of the assembly (the inverse of
 	 * {@link #detachFallingBlock}). Server-side; the collider only invokes this when the cell
 	 * is empty and supported below.
 	 */
 	private void captureLandedBlock(Entity entity, BlockPos localCell) {
-		if (contraption == null || !(level instanceof ServerLevel)
+		if (assembly == null || !(level instanceof ServerLevel)
 			|| !(entity instanceof FallingBlockEntity falling))
 			return;
 		BlockState state = falling.getBlockState();
-		if (state.isAir() || contraption.getBlocks().size() >= Contraption.MAX_BLOCKS)
+		if (state.isAir() || assembly.getBlocks().size() >= Assembly.MAX_BLOCKS)
 			return;
 
 		// Block-entity data from the falling block is dropped for now (sand/gravel/anvils have none).
-		contraption.putBlock(localCell, state, null, null);
+		assembly.putBlock(localCell, state, null, null);
 		falling.discard();
 
-		Vec3 worldCenter = ContraptionTransform.ofCurrent(this).localBlockCenterToWorld(localCell);
+		Vec3 worldCenter = AssemblyTransform.ofCurrent(this).localBlockCenterToWorld(localCell);
 		SoundType sound = state.getSoundType();
 		// Emit on the real outer world (a nested motor's own level is a sim wrapper that would
 		// re-transform the already-world position).
@@ -826,18 +826,18 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	/**
-	 * Resolve a single player against this contraption (their movement is
+	 * Resolve a single player against this assembly (their movement is
 	 * client-authoritative, so the client drives this for its local player). Kept
 	 * free of any client-only type so this BlockEntity class stays dist-safe.
 	 */
 	public void collideWithPlayer(Player player) {
-		if (contraption == null || player == null)
+		if (assembly == null || player == null)
 			return;
 		collide(entity -> entity == player);
 	}
 
 	private void keepRidersAfloat() {
-		AABB bounds = computeWorldBounds(ContraptionTransform.ofCurrent(this));
+		AABB bounds = computeWorldBounds(AssemblyTransform.ofCurrent(this));
 		for (Player player : rootRealLevel().getEntitiesOfClass(Player.class, bounds)) {
 			if (player instanceof ServerPlayer serverPlayer) {
 				ServerGamePacketListenerImplAccessor connection =
@@ -854,13 +854,13 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		// rotation (project the composed pose forward by each motor's intended spin), so it lands
 		// exactly on its circle instead of stepping along the tangent and spiralling outward. The
 		// composition makes a nested rider inherit its parent's angular velocity as well as its own.
-		ContraptionTransform now = ContraptionTransform.ofCurrent(this);
-		ContraptionTransform next = ContraptionTransform.ofIntendedNext(this);
+		AssemblyTransform now = AssemblyTransform.ofCurrent(this);
+		AssemblyTransform next = AssemblyTransform.ofIntendedNext(this);
 		return next.localToWorld(now.worldToLocal(worldPos)).subtract(worldPos);
 	}
 
-	private AABB computeWorldBounds(ContraptionTransform transform) {
-		AABB local = contraption == null ? new AABB(BlockPos.ZERO) : contraption.getBounds();
+	private AABB computeWorldBounds(AssemblyTransform transform) {
+		AABB local = assembly == null ? new AABB(BlockPos.ZERO) : assembly.getBounds();
 		// Enclose the rotating (possibly nested) structure: transform all 8 local corners to world.
 		double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY, minZ = Double.POSITIVE_INFINITY;
 		double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY, maxZ = Double.NEGATIVE_INFINITY;
@@ -894,12 +894,12 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		tag.putBoolean("Running", running);
 		tag.putInt("Axis", rotationAxis.ordinal());
 		tag.putFloat("Angle", angle);
-		// Flush live block entities back into the contraption first, so the serialized structure
+		// Flush live block entities back into the assembly first, so the serialized structure
 		// reflects their current state (smelt progress, container contents, …) for both save and sync.
-		if (simLevel != null && simLevel.getContraption() == contraption)
+		if (simLevel != null && simLevel.getAssembly() == assembly)
 			simLevel.flushAllBlockEntityData();
-		if (contraption != null)
-			tag.put("Contraption", contraption.writeNBT(level == null ? 0L : level.getGameTime()));
+		if (assembly != null)
+			tag.put("Assembly", assembly.writeNBT(level == null ? 0L : level.getGameTime()));
 	}
 
 	private void readState(CompoundTag tag, HolderLookup.Provider registries) {
@@ -907,14 +907,14 @@ public class ServoMotorBlockEntity extends BlockEntity {
 		// client advances the angle deterministically every tick, so adopting the packet's
 		// (already stale) angle here would snap the rotation. Only adopt the synced angle on
 		// the initial load; otherwise keep the client's free-running angle.
-		boolean wasRunningWithContraption = running && contraption != null;
+		boolean wasRunningWithAssembly = running && assembly != null;
 		float clientAngle = angle;
 		float clientPrevAngle = prevAngle;
 
 		running = tag.getBoolean("Running");
 		rotationAxis = Axis.values()[tag.getInt("Axis")];
 
-		if (level != null && level.isClientSide && wasRunningWithContraption && running) {
+		if (level != null && level.isClientSide && wasRunningWithAssembly && running) {
 			angle = clientAngle;
 			prevAngle = clientPrevAngle;
 		} else {
@@ -922,11 +922,11 @@ public class ServoMotorBlockEntity extends BlockEntity {
 			prevAngle = angle;
 		}
 
-		if (tag.contains("Contraption")) {
-			contraption = new Contraption();
-			contraption.readNBT(registries, tag.getCompound("Contraption"), level == null ? 0L : level.getGameTime());
+		if (tag.contains("Assembly")) {
+			assembly = new Assembly();
+			assembly.readNBT(registries, tag.getCompound("Assembly"), level == null ? 0L : level.getGameTime());
 		} else {
-			contraption = null;
+			assembly = null;
 		}
 	}
 
@@ -967,9 +967,9 @@ public class ServoMotorBlockEntity extends BlockEntity {
 	}
 
 	public AABB getRenderBoundingBox() {
-		if (contraption == null)
+		if (assembly == null)
 			return new AABB(worldPosition);
-		return computeWorldBounds(ContraptionTransform.ofCurrent(this));
+		return computeWorldBounds(AssemblyTransform.ofCurrent(this));
 	}
 
 	// endregion

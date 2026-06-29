@@ -9,15 +9,15 @@ import org.joml.Quaternionf;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 
-import com.assemblylib.contraption.ContraptionRotatedEntity;
+import com.assemblylib.assembly.AssemblyRotatedEntity;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.FallingBlockRenderer;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 
 /**
- * Applies a falling block's inherited contraption rotation (see
- * {@link ContraptionRotatedEntity}) about the block's own centre, so a block detached
- * from a tilted/rotating contraption renders with that orientation as it falls. Wraps
+ * Applies a falling block's inherited assembly rotation (see
+ * {@link AssemblyRotatedEntity}) about the block's own centre, so a block detached
+ * from a tilted/rotating assembly renders with that orientation as it falls. Wraps
  * vanilla's render with a balanced push/pop.
  */
 @Mixin(FallingBlockRenderer.class)
@@ -27,8 +27,8 @@ public class FallingBlockRendererMixin {
 	private void zps$pushRotation(FallingBlockEntity entity, float yaw, float partialTick, PoseStack pose,
 		MultiBufferSource buffer, int packedLight, CallbackInfo ci) {
 		pose.pushPose();
-		if (entity instanceof ContraptionRotatedEntity rotated) {
-			Quaternionf rotation = rotated.zps$getContraptionRotation();
+		if (entity instanceof AssemblyRotatedEntity rotated) {
+			Quaternionf rotation = rotated.zps$getAssemblyRotation();
 			// Rotate about the block's own centre; identity (no inherited rotation) is a no-op.
 			pose.translate(0.0, 0.5, 0.0);
 			pose.mulPose(rotation);

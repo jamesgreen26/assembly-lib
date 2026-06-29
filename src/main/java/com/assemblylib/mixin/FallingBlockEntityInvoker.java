@@ -8,7 +8,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
- * Exposes {@link FallingBlockEntity}'s private positioned constructor so a contraption
+ * Exposes {@link FallingBlockEntity}'s private positioned constructor so a assembly
  * can detach an unsupported falling block into a real entity at an exact (fractional,
  * rotated) world position, without going through {@code FallingBlockEntity#fall} (which
  * would also mutate a real-world block at the spawn position).

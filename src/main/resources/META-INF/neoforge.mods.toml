@@ -8,7 +8,7 @@ version = "${version}"
 displayName = "AssemblyLib"
 authors = "G_Mungus, Quoissant, Cosmos, PacificCyan"
 description = '''
-Block-entity-hosted contraptions: assemble, move, and interact with structures driven by a Servo Motor.
+Block-entity-hosted assemblys: assemble, move, and interact with structures driven by a Servo Motor.
 '''
 
 [[mixins]]

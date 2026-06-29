@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import org.joml.Quaternionf;
 
-import com.assemblylib.contraption.ContraptionRotatedEntity;
+import com.assemblylib.assembly.AssemblyRotatedEntity;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -19,13 +19,13 @@ import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.level.Level;
 
 /**
- * Adds a synced + persisted contraption rotation (a full {@link Quaternionf}) to
- * {@link FallingBlockEntity}, so a block detached from a rotating contraption keeps the
+ * Adds a synced + persisted assembly rotation (a full {@link Quaternionf}) to
+ * {@link FallingBlockEntity}, so a block detached from a rotating assembly keeps the
  * structure's (possibly nested/composed) orientation while it falls. See
- * {@link ContraptionRotatedEntity}.
+ * {@link AssemblyRotatedEntity}.
  */
 @Mixin(FallingBlockEntity.class)
-public abstract class FallingBlockEntityRotationMixin extends Entity implements ContraptionRotatedEntity {
+public abstract class FallingBlockEntityRotationMixin extends Entity implements AssemblyRotatedEntity {
 
 	@Unique
 	private static final EntityDataAccessor<Quaternionf> ZPS_ROTATION =
@@ -58,12 +58,12 @@ public abstract class FallingBlockEntityRotationMixin extends Entity implements 
 	}
 
 	@Override
-	public void zps$setContraptionRotation(Quaternionf rotation) {
+	public void zps$setAssemblyRotation(Quaternionf rotation) {
 		this.entityData.set(ZPS_ROTATION, new Quaternionf(rotation));
 	}
 
 	@Override
-	public Quaternionf zps$getContraptionRotation() {
+	public Quaternionf zps$getAssemblyRotation() {
 		return this.entityData.get(ZPS_ROTATION);
 	}
 }

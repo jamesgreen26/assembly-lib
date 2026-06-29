@@ -5,7 +5,7 @@ import java.util.Map;
 
 import com.mojang.serialization.MapCodec;
 
-import com.assemblylib.contraption.ContraptionBlockGetter;
+import com.assemblylib.assembly.AssemblyBlockGetter;
 import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -26,9 +26,9 @@ import org.jetbrains.annotations.NotNull;
 /**
  * The rotating "head" of a Servo Motor, analogous to the vanilla piston head: it
  * is unobtainable (no item, no loot) and only ever exists as a block inside a
- * {@link com.assemblylib.blockentity.ServoMotorBlockEntity}-hosted contraption,
+ * {@link com.assemblylib.blockentity.ServoMotorBlockEntity}-hosted assembly,
  * seeded at the motor's own cell. Breaking it is routed to breaking the whole
- * motor, and it gets slower to break the larger the contraption is.
+ * motor, and it gets slower to break the larger the assembly is.
  */
 public class ServoMotorHeadBlock extends Block {
 
@@ -93,9 +93,9 @@ public class ServoMotorHeadBlock extends Block {
 	@Override
 	public float getDestroyProgress(BlockState state, @NotNull Player player, @NotNull BlockGetter level, @NotNull BlockPos pos) {
 		float base = super.getDestroyProgress(state, player, level, pos);
-		// When mined out of a contraption the getter exposes the structure, so the head
+		// When mined out of a assembly the getter exposes the structure, so the head
 		// breaks at the same scaled rate as the coinciding motor block.
-		int count = level instanceof ContraptionBlockGetter getter ? getter.contraption().getBlocks().size() : 1;
+		int count = level instanceof AssemblyBlockGetter getter ? getter.assembly().getBlocks().size() : 1;
 		return ServoMotorBlock.scaledDestroyProgress(base, count);
 	}
 }

@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import com.assemblylib.client.ContraptionInteractionClient;
+import com.assemblylib.client.AssemblyInteractionClient;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.entity.player.Player;
@@ -31,14 +31,14 @@ public class PlayerMixin {
 	}
 
 	@Inject(method = "maybeBackOffFromEdge", at = @At("HEAD"), cancellable = true)
-	private void zps$maybeBackOffFromContraptionEdge(Vec3 movement, MoverType moverType,
+	private void zps$maybeBackOffFromAssemblyEdge(Vec3 movement, MoverType moverType,
 		CallbackInfoReturnable<Vec3> cir) {
 		Player self = (Player) (Object) this;
 		float maxUpStep = self.maxUpStep();
 		if (!abilities.flying && movement.y <= 0.0D && (moverType == MoverType.SELF || moverType == MoverType.PLAYER)
 			&& isStayingOnGroundSurface()
-			&& (isAboveGround(maxUpStep) || ContraptionInteractionClient.isAboveContraptionGround(self, maxUpStep))) {
-			Vec3 adjusted = ContraptionInteractionClient.maybeBackOffFromContraptionEdge(self, movement, maxUpStep);
+			&& (isAboveGround(maxUpStep) || AssemblyInteractionClient.isAboveAssemblyGround(self, maxUpStep))) {
+			Vec3 adjusted = AssemblyInteractionClient.maybeBackOffFromAssemblyEdge(self, movement, maxUpStep);
 			if (adjusted != null)
 				cir.setReturnValue(adjusted);
 		}

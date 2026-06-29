@@ -12,11 +12,11 @@ public final class AssemblyLibPackets {
 
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(PROTOCOL_VERSION);
-        registrar.playToServer(ContraptionBreakC2SPacket.TYPE, ContraptionBreakC2SPacket.STREAM_CODEC, ContraptionBreakC2SPacket::handle);
-        registrar.playToServer(ContraptionPlaceC2SPacket.TYPE, ContraptionPlaceC2SPacket.STREAM_CODEC, ContraptionPlaceC2SPacket::handle);
-        registrar.playToServer(ContraptionUseC2SPacket.TYPE, ContraptionUseC2SPacket.STREAM_CODEC, ContraptionUseC2SPacket::handle);
-        registrar.playToServer(ContraptionBreakProgressC2SPacket.TYPE, ContraptionBreakProgressC2SPacket.STREAM_CODEC, ContraptionBreakProgressC2SPacket::handle);
-        registrar.playToClient(ContraptionDestroyStageS2CPacket.TYPE, ContraptionDestroyStageS2CPacket.STREAM_CODEC, ContraptionDestroyStageS2CPacket::handle);
+        registrar.playToServer(AssemblyBreakC2SPacket.TYPE, AssemblyBreakC2SPacket.STREAM_CODEC, AssemblyBreakC2SPacket::handle);
+        registrar.playToServer(AssemblyPlaceC2SPacket.TYPE, AssemblyPlaceC2SPacket.STREAM_CODEC, AssemblyPlaceC2SPacket::handle);
+        registrar.playToServer(AssemblyUseC2SPacket.TYPE, AssemblyUseC2SPacket.STREAM_CODEC, AssemblyUseC2SPacket::handle);
+        registrar.playToServer(AssemblyBreakProgressC2SPacket.TYPE, AssemblyBreakProgressC2SPacket.STREAM_CODEC, AssemblyBreakProgressC2SPacket::handle);
+        registrar.playToClient(AssemblyDestroyStageS2CPacket.TYPE, AssemblyDestroyStageS2CPacket.STREAM_CODEC, AssemblyDestroyStageS2CPacket::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

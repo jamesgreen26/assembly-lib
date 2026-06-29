@@ -4,7 +4,7 @@ import com.assemblylib.AssemblyLib;
 import com.assemblylib.block.ModBlocks;
 import com.assemblylib.block.ServoMotorBlock;
 import com.assemblylib.blockentity.ServoMotorBlockEntity;
-import com.assemblylib.contraption.Contraption;
+import com.assemblylib.assembly.Assembly;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -36,17 +36,17 @@ public class ServoMotorGameTests {
             return;
         }
 
-        motor.initContraption();
-        Contraption contraption = motor.getContraption();
-        if (contraption == null) {
-            helper.fail("Motor should be pre-assembled with a contraption");
+        motor.initAssembly();
+        Assembly assembly = motor.getAssembly();
+        if (assembly == null) {
+            helper.fail("Motor should be pre-assembled with a assembly");
             return;
         }
-        if (contraption.getBlocks().size() != 1) {
-            helper.fail("Contraption should contain only the head; got " + contraption.getBlocks().size());
+        if (assembly.getBlocks().size() != 1) {
+            helper.fail("Assembly should contain only the head; got " + assembly.getBlocks().size());
             return;
         }
-        StructureBlockInfo head = contraption.getBlocks().get(motor.headLocalPos());
+        StructureBlockInfo head = assembly.getBlocks().get(motor.headLocalPos());
         if (head == null || !head.state().is(ModBlocks.SERVO_MOTOR_HEAD.get())) {
             helper.fail("Head should sit at the motor's own cell (local " + motor.headLocalPos() + ")");
             return;
@@ -57,50 +57,50 @@ public class ServoMotorGameTests {
     }
 
     /**
-     * Exercises the in-flight editing primitives on the contraption data model used to build
+     * Exercises the in-flight editing primitives on the assembly data model used to build
      * outward off the head (the server break/place methods wrap these but need a real
      * ServerPlayer, verified with runClient). Here we assert add/remove keep the block map and
      * bounds consistent.
      */
     @GameTest(template = TEMPLATE)
-    public static void contraptionAddAndRemoveBlocks(GameTestHelper helper) {
+    public static void assemblyAddAndRemoveBlocks(GameTestHelper helper) {
         helper.setBlock(MOTOR_POS, ModBlocks.SERVO_MOTOR.get().defaultBlockState()
                 .setValue(ServoMotorBlock.FACING, Direction.EAST));
         ServoMotorBlockEntity motor = (ServoMotorBlockEntity) helper.getBlockEntity(MOTOR_POS);
-        motor.initContraption();
+        motor.initAssembly();
 
-        Contraption contraption = motor.getContraption();
-        if (contraption == null) {
-            helper.fail("Expected a contraption after placement");
+        Assembly assembly = motor.getAssembly();
+        if (assembly == null) {
+            helper.fail("Expected a assembly after placement");
             return;
         }
 
         // Use a local position far from anything else so the bounds effect is unambiguous.
         BlockPos far = new BlockPos(0, 10, 0); // block AABB spans y in [10, 11]
-        int before = contraption.getBlocks().size();
+        int before = assembly.getBlocks().size();
 
-        contraption.putBlock(far, Blocks.OAK_PLANKS.defaultBlockState(), null, null);
-        if (contraption.getBlocks().size() != before + 1
-                || !contraption.getBlocks().get(far).state().is(Blocks.OAK_PLANKS)) {
+        assembly.putBlock(far, Blocks.OAK_PLANKS.defaultBlockState(), null, null);
+        if (assembly.getBlocks().size() != before + 1
+                || !assembly.getBlocks().get(far).state().is(Blocks.OAK_PLANKS)) {
             helper.fail("putBlock should have added the plank at " + far);
             return;
         }
-        if (contraption.getBounds().maxY < 11.0) {
-            helper.fail("Bounds should have grown to include y=10; got " + contraption.getBounds());
+        if (assembly.getBounds().maxY < 11.0) {
+            helper.fail("Bounds should have grown to include y=10; got " + assembly.getBounds());
             return;
         }
 
-        if (contraption.removeBlock(far) == null) {
+        if (assembly.removeBlock(far) == null) {
             helper.fail("removeBlock should have returned the removed plank");
             return;
         }
-        if (contraption.getBlocks().size() != before || contraption.getBlocks().containsKey(far)) {
+        if (assembly.getBlocks().size() != before || assembly.getBlocks().containsKey(far)) {
             helper.fail("removeBlock should have removed the plank at " + far);
             return;
         }
         // Bounds recomputed from scratch must no longer reach y=10.
-        if (contraption.getBounds().maxY >= 11.0) {
-            helper.fail("Bounds should have been recomputed to exclude y=10; got " + contraption.getBounds());
+        if (assembly.getBounds().maxY >= 11.0) {
+            helper.fail("Bounds should have been recomputed to exclude y=10; got " + assembly.getBounds());
             return;
         }
 

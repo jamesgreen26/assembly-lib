@@ -36,7 +36,7 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * Bearing-style driver block: assembles connected blocks in front of it into a
- * {@link ServoMotorBlockEntity}-hosted contraption and spins them around its
+ * {@link ServoMotorBlockEntity}-hosted assembly and spins them around its
  * facing axis.
  */
 public class ServoMotorBlock extends BaseEntityBlock {
@@ -54,11 +54,11 @@ public class ServoMotorBlock extends BaseEntityBlock {
 		m.put(Direction.EAST, Block.box(0, 0, 0, 12, 16, 16));
 	});
 
-	/** Upper bound on how much the attached contraption can slow breaking the motor/head. */
+	/** Upper bound on how much the attached assembly can slow breaking the motor/head. */
 	public static final float MAX_BREAK_MULTIPLIER = 10f;
 
 	/**
-	 * Dampen the per-tick break progress by the contraption size: bigger structures break
+	 * Dampen the per-tick break progress by the assembly size: bigger structures break
 	 * slower, but with diminishing growth and a hard cap so they stay breakable.
 	 */
 	public static float scaledDestroyProgress(float base, int count) {
@@ -119,9 +119,9 @@ public class ServoMotorBlock extends BaseEntityBlock {
 	public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer,
 		@NotNull ItemStack stack) {
 		super.setPlacedBy(level, pos, state, placer, stack);
-		// Place pre-assembled: seed the contraption with the head straight away.
+		// Place pre-assembled: seed the assembly with the head straight away.
 		if (!level.isClientSide && level.getBlockEntity(pos) instanceof ServoMotorBlockEntity motor)
-			motor.initContraption();
+			motor.initAssembly();
 	}
 
 	@Override
@@ -129,7 +129,7 @@ public class ServoMotorBlock extends BaseEntityBlock {
 		@NotNull BlockPos pos) {
 		float base = super.getDestroyProgress(state, player, level, pos);
 		int count = level.getBlockEntity(pos) instanceof ServoMotorBlockEntity motor
-			? motor.getContraptionBlockCount() : 1;
+			? motor.getAssemblyBlockCount() : 1;
 		return scaledDestroyProgress(base, count);
 	}
 
