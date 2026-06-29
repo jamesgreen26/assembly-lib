@@ -88,7 +88,7 @@ public class AssemblyNestingGameTests {
 
 	/**
 	 * A pure Y-axis turntable reports no vertical rotation; composing a tilt (X/Z) onto it does. Guards
-	 * the collider's "is the platform tilted" decision that replaces {@code AssemblyRotationState}.
+	 * the collider's "is the platform tilted" decision.
 	 */
 	@GameTest(template = TEMPLATE)
 	public static void verticalRotationDetection(GameTestHelper helper) {

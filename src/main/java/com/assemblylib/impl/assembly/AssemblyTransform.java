@@ -177,9 +177,7 @@ public final class AssemblyTransform {
 	/**
 	 * World -> local rotation with the rotation about <em>world</em> Y (yaw) removed, used to orient a
 	 * colliding entity's box: a turntable's rider turns with the platform (its box stays aligned to the
-	 * assembly's axes), while a tilt keeps the rider world-aligned. Generalises the old
-	 * {@code AssemblyRotationState.asMatrixNoYaw} to a composed rotation: it reproduces that method
-	 * exactly for a single X/Y/Z axis and degrades gracefully for a tilted/nested rotation.
+	 * assembly's axes), while a tilt keeps the rider world-aligned.
 	 */
 	public Matrix3d worldToLocalRotationNoWorldYaw() {
 		Vec3 localXInWorld = rotation.transform(new Vec3(1, 0, 0));
@@ -190,8 +188,7 @@ public final class AssemblyTransform {
 
 	/**
 	 * Whether the platform tilts off the horizontal (world up is not preserved by the composed
-	 * rotation). For a plain Y-axis turntable this is {@code false}, matching the old
-	 * {@code AssemblyRotationState.hasVerticalRotation}.
+	 * rotation). For a plain Y-axis turntable this is {@code false}.
 	 */
 	public boolean hasVerticalRotation() {
 		Vec3 up = rotation.transform(new Vec3(0, 1, 0));
