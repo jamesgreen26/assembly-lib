@@ -2,6 +2,7 @@ package com.assemblylib;
 
 import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.blockentity.ModBlockEntities;
+import com.assemblylib.debug.entity.ModEntities;
 import com.assemblylib.impl.client.ClientSetup;
 import com.assemblylib.debug.gametest.AssemblyNestingGameTests;
 import com.assemblylib.debug.gametest.AssemblyRedstoneGameTests;
@@ -30,8 +31,10 @@ public final class AssemblyLib {
     public AssemblyLib(IEventBus modEventBus, Dist dist, ModContainer modContainer) {
         ModBlocks.BLOCKS.register(modEventBus);
         ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
+        ModEntities.ENTITIES.register(modEventBus);
         ModItems.ITEMS.register(modEventBus);
         ModCreativeTabs.TABS.register(modEventBus);
+        modEventBus.addListener(ModEntities::registerAttributes);
         modEventBus.addListener(AssemblyLibPackets::register);
         modEventBus.addListener(AssemblyLib::registerGameTests);
 

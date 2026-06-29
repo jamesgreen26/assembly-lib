@@ -3,7 +3,7 @@ package com.assemblylib.impl.client.renderer.assembly;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
@@ -40,6 +40,7 @@ import net.minecraft.core.Vec3i;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Host-agnostic GPU-instanced rendering of an {@link AssemblyHost}'s assembly while Flywheel is
@@ -50,7 +51,7 @@ import net.minecraft.world.phys.AABB;
  *
  * <p>Extracted from the servo motor's block-entity visual so any Flywheel visual (block entity or
  * entity) can drive an assembly: the concrete visual creates one of these, passing its
- * {@link VisualizationContext} and a supplier for its render-origin-relative visual position, and
+ * {@link VisualizationContext} and a partial-tick-aware supplier for its render-origin-relative visual position, and
  * forwards the visual lifecycle ({@link #planFrame}/{@link #planTick}/{@link #delete}/
  * {@link #setSectionCollector}/{@link #collectCrumbling}).
  */
@@ -59,7 +60,7 @@ public class AssemblyVisualCore {
 	private static final int LIGHT_PADDING = 1;
 
 	private final AssemblyHost host;
-	private final Supplier<BlockPos> visualPosition;
+	private final Function<Float, Vec3> visualPosition;
 
 	private final VisualEmbedding embedding;
 	private final List<BlockEntityVisual<?>> children = new ArrayList<>();
@@ -78,7 +79,7 @@ public class AssemblyVisualCore {
 	private long minSection = Long.MIN_VALUE;
 	private long maxSection = Long.MIN_VALUE;
 
-	public AssemblyVisualCore(VisualizationContext ctx, AssemblyHost host, Supplier<BlockPos> visualPosition,
+	public AssemblyVisualCore(VisualizationContext ctx, AssemblyHost host, Function<Float, Vec3> visualPosition,
 		float partialTick) {
 		this.host = host;
 		this.visualPosition = visualPosition;
@@ -179,12 +180,13 @@ public class AssemblyVisualCore {
 		// A nested host's embedding is a child of its parent's embedding, so its frame is the parent
 		// assembly's LOCAL space: translate by the raw parent-local cell (no render-origin offset).
 		// A root host's embedding sits in the section frame, so use the render-origin-relative position.
-		BlockPos vp = host.assemblyLevel() instanceof AssemblyRenderLevel
-			? host.assemblyHostBlockPos()
-			: visualPosition.get();
+		Vec3 vp = host.assemblyLevel() instanceof AssemblyRenderLevel
+			? Vec3.atLowerCornerOf(host.assemblyHostBlockPos())
+			: visualPosition.apply(partialTick);
 
 		Matrix4f pose = new Matrix4f();
-		pose.translate(vp.getX() + facing.getStepX(), vp.getY() + facing.getStepY(), vp.getZ() + facing.getStepZ());
+		pose.translate((float) vp.x + facing.getStepX(), (float) vp.y + facing.getStepY(),
+			(float) vp.z + facing.getStepZ());
 		AssemblyTransform.pivotRotate(pose, host.getRotationAxis(), angle);
 
 		embedding.transforms(pose, pose.normal(new Matrix3f()));

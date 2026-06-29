@@ -11,6 +11,7 @@ import dev.engine_room.flywheel.api.visual.TickableVisual;
 import dev.engine_room.flywheel.api.visualization.VisualizationContext;
 import dev.engine_room.flywheel.lib.visual.AbstractBlockEntityVisual;
 import com.assemblylib.debug.blockentity.ServoMotorBlockEntity;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Flywheel block-entity visual for a Servo Motor's assembly. The host-agnostic rendering lives in
@@ -24,7 +25,8 @@ public class ServoMotorVisual extends AbstractBlockEntityVisual<ServoMotorBlockE
 
 	public ServoMotorVisual(VisualizationContext ctx, ServoMotorBlockEntity blockEntity, float partialTick) {
 		super(ctx, blockEntity, partialTick);
-		core = new AssemblyVisualCore(visualizationContext, blockEntity, this::getVisualPosition, partialTick);
+		core = new AssemblyVisualCore(visualizationContext, blockEntity,
+			ignored -> Vec3.atLowerCornerOf(getVisualPosition()), partialTick);
 	}
 
 	@Override

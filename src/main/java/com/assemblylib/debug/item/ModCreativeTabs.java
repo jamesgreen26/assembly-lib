@@ -16,6 +16,9 @@ public class ModCreativeTabs {
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.assemblylib"))
                     .icon(() -> new ItemStack(ModItems.SERVO_MOTOR.get()))
-                    .displayItems((parameters, output) -> output.accept(ModItems.SERVO_MOTOR.get()))
+                    .displayItems((parameters, output) -> {
+                        output.accept(ModItems.SERVO_MOTOR.get());
+                        output.accept(ModItems.ASSEMBLY_HOST_SPAWN_EGG.get());
+                    })
                     .build());
 }

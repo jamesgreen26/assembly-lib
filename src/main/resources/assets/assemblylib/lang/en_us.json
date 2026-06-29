@@ -3,6 +3,8 @@
     "block.assemblylib.servo_motor": "Servo Motor",
     "block.assemblylib.servo_motor_head": "Servo Motor Head",
     "item.assemblylib.servo_motor": "Servo Motor",
+    "entity.assemblylib.assembly_host": "Assembly Host",
+    "item.assemblylib.assembly_host_spawn_egg": "Assembly Host Spawn Egg",
     "assemblylib.assembly.too_large": "Structure is too large to assemble",
     "assemblylib.assembly.unloaded_chunk": "Structure reaches into an unloaded chunk at [%s, %s, %s]",
     "assemblylib.assembly.empty": "No blocks to assemble"
