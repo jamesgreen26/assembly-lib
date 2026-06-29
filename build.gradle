@@ -1,0 +1,114 @@
+plugins {
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.137'
+}
+
+group = project.maven_group
+version = project.mod_version
+
+base {
+    archivesName = project.archives_name
+}
+
+neoForge {
+    version = neoforge_version
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+        data {
+            data()
+        }
+        gameTestServer {
+            type = "gameTestServer"
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'assemblylib'
+        }
+    }
+
+    mods {
+        assemblylib {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+jar {
+    manifest.attributes([
+        "MixinConfigs": "assemblylib.mixins.json"
+    ])
+}
+
+repositories {
+    mavenCentral()
+    maven { url = "https://maven.createmod.net" }
+    maven { url = "https://maven.bawnorton.com/releases" }
+    maven {
+        name = "Jared's maven"
+        url = "https://maven.blamejared.com/"
+    }
+    maven { url = "https://maven.tterrag.com/" }
+}
+
+dependencies {
+    compileOnly("io.github.llamalad7:mixinextras-common:0.5.0")
+    jarJar(implementation("io.github.llamalad7:mixinextras-neoforge:0.5.0")) {
+        version {
+            strictly "[0.5.0,)"
+            prefer "0.5.0"
+        }
+    }
+
+    // Ponder bundles catnip (net.createmod.catnip.levelWrappers.*), which the contraption sim
+    // levels extend. Flywheel drives the contraption rendering.
+    implementation(jarJar("net.createmod.ponder:ponder-neoforge:$ponder_version+mc$minecraft_version") {
+        version {
+            strictly "[$ponder_version+mc$minecraft_version,)"
+            prefer "$ponder_version+mc$minecraft_version"
+        }
+    })
+
+    implementation(jarJar("dev.engine-room.flywheel:flywheel-neoforge-$minecraft_version:$flywheel_version") {
+        version {
+            strictly "[${flywheel_version},2.0)"
+            prefer flywheel_version
+        }
+    })
+
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.0")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.0")
+}
+
+configurations.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("dev.engine_room.flywheel:flywheel-neoforge-1.21.1"))
+                .using(module("dev.engine-room.flywheel:flywheel-neoforge-1.21.1:1.0.0-10"))
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
+
+processResources {
+    inputs.property 'version', project.version
+
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand version: project.version
+    }
+}
+
+java {
+    withSourcesJar()
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}

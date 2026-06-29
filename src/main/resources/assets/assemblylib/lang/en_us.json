@@ -1,0 +1,9 @@
+{
+    "itemGroup.assemblylib": "AssemblyLib",
+    "block.assemblylib.servo_motor": "Servo Motor",
+    "block.assemblylib.servo_motor_head": "Servo Motor Head",
+    "item.assemblylib.servo_motor": "Servo Motor",
+    "assemblylib.contraption.too_large": "Structure is too large to assemble",
+    "assemblylib.contraption.unloaded_chunk": "Structure reaches into an unloaded chunk at [%s, %s, %s]",
+    "assemblylib.contraption.empty": "No blocks to assemble"
+}

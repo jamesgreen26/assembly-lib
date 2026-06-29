@@ -1,0 +1,36 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "assemblylib"
+version = "${version}"
+displayName = "AssemblyLib"
+authors = "G_Mungus, Quoissant, Cosmos, PacificCyan"
+description = '''
+Block-entity-hosted contraptions: assemble, move, and interact with structures driven by a Servo Motor.
+'''
+
+[[mixins]]
+config = "assemblylib.mixins.json"
+
+[[dependencies.assemblylib]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.assemblylib]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.22)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.assemblylib]]
+modId = "flywheel"
+type = "required"
+versionRange = "[1.0,2.0)"
+ordering = "NONE"
+side = "CLIENT"
