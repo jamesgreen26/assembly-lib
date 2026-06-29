@@ -17,6 +17,7 @@ public final class AssemblyLibPackets {
         registrar.playToServer(AssemblyUseC2SPacket.TYPE, AssemblyUseC2SPacket.STREAM_CODEC, AssemblyUseC2SPacket::handle);
         registrar.playToServer(AssemblyBreakProgressC2SPacket.TYPE, AssemblyBreakProgressC2SPacket.STREAM_CODEC, AssemblyBreakProgressC2SPacket::handle);
         registrar.playToClient(AssemblyDestroyStageS2CPacket.TYPE, AssemblyDestroyStageS2CPacket.STREAM_CODEC, AssemblyDestroyStageS2CPacket::handle);
+        registrar.playToClient(AssemblySyncS2CPacket.TYPE, AssemblySyncS2CPacket.STREAM_CODEC, AssemblySyncS2CPacket::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

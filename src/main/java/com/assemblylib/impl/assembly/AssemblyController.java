@@ -14,6 +14,8 @@ import com.assemblylib.AssemblyLib;
 import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.assembly.collision.AssemblyCollider;
 import com.assemblylib.impl.client.renderer.assembly.AssemblyRenderState;
+import com.assemblylib.impl.networking.AssemblySync;
+import com.assemblylib.impl.networking.AssemblySyncS2CPacket;
 import com.assemblylib.impl.mixin.FallingBlockEntityInvoker;
 import com.assemblylib.impl.mixin.ServerGamePacketListenerImplAccessor;
 import net.minecraft.core.BlockPos;
@@ -147,7 +149,7 @@ public final class AssemblyController {
 		tickAssemblyBlockEntities();
 		if (simNeedsSync) {
 			simNeedsSync = false;
-			host.syncAssemblyToClients();
+			sync();
 		}
 
 		// Resolve non-player entities here (players are resolved client-side). A stopped
@@ -196,7 +198,7 @@ public final class AssemblyController {
 	/**
 	 * The server simulation level bound to this assembly: writes/ticks mutate the assembly and mark the
 	 * host dirty, and — because it is a real {@link ServerLevel} ({@link AssemblySimServerLevel}) —
-	 * scheduled ticks and redstone run natively. Callers batch a single {@link AssemblyHost#syncAssemblyToClients()}
+	 * scheduled ticks and redstone run natively. Callers batch a single {@link #sync()}
 	 * after an operation, so a multi-block change is one network re-sync. Cached (constructing it builds
 	 * a full ServerLevel) and rebuilt when the assembly identity changes. Server-only.
 	 */
@@ -317,7 +319,7 @@ public final class AssemblyController {
 	 * Remove the block at {@code local} through the simulation level — so the standard block update
 	 * fires — and spawn a real {@link FallingBlockEntity} for it at the block's current rotated world
 	 * position, with the assembly's orientation and the given release {@code velocity}. Does NOT
-	 * re-sync; callers batch one {@link AssemblyHost#syncAssemblyToClients()}.
+	 * re-sync; callers batch one {@link #sync()}.
 	 */
 	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, AssemblySimServerLevel sim,
 		ServerLevel serverLevel) {
@@ -346,7 +348,7 @@ public final class AssemblyController {
 	private void applyStructureUpdate(AssemblySimServerLevel sim, ServerLevel serverLevel) {
 		detachDisconnected(sim, serverLevel);
 		host.markAssemblyChanged();
-		host.syncAssemblyToClients();
+		sync();
 	}
 
 	/**
@@ -444,7 +446,7 @@ public final class AssemblyController {
 
 		assembly = next;
 		host.markAssemblyChanged();
-		host.syncAssemblyToClients();
+		sync();
 	}
 
 	/** Called when the host is broken: drop every assembly block as items. */
@@ -635,7 +637,7 @@ public final class AssemblyController {
 		serverLevel.playSound(null, BlockPos.containing(worldCenter), sound.getPlaceSound(), SoundSource.BLOCKS,
 			(sound.getVolume() + 1.0f) / 2.0f, sound.getPitch() * 0.8f);
 		host.markAssemblyChanged();
-		host.syncAssemblyToClients();
+		sync();
 		return true;
 	}
 
@@ -669,14 +671,14 @@ public final class AssemblyController {
 			if (itemResult != ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
 				if (itemResult.consumesAction()) {
 					host.markAssemblyChanged();
-					host.syncAssemblyToClients();
+					sync();
 				}
 				return itemResult.consumesAction();
 			}
 		}
 		if (state.useWithoutItem(sim, player, hit).consumesAction()) {
 			host.markAssemblyChanged();
-			host.syncAssemblyToClients();
+			sync();
 			return true;
 		}
 		return false;
@@ -731,7 +733,7 @@ public final class AssemblyController {
 		rootRealLevel().playSound(null, BlockPos.containing(worldCenter), sound.getPlaceSound(), SoundSource.BLOCKS,
 			(sound.getVolume() + 1.0f) / 2.0f, sound.getPitch() * 0.8f);
 		host.markAssemblyChanged();
-		host.syncAssemblyToClients();
+		sync();
 	}
 
 	/**
@@ -798,6 +800,24 @@ public final class AssemblyController {
 	// endregion
 
 	// region sync + persistence
+
+	/**
+	 * Push the assembly to watching clients on its own channel ({@link AssemblySyncS2CPacket}), instead
+	 * of riding the host's block-entity / entity sync. A root host broadcasts to its trackers; a nested
+	 * host routes the request through its sim level to the parent, which re-broadcasts the whole
+	 * structure (this host's state included). Server-side; a no-op on the client.
+	 */
+	public void sync() {
+		Level level = host.assemblyLevel();
+		if (level == null || level.isClientSide)
+			return;
+		if (level instanceof AssemblyHostLevel nested) {
+			nested.requestAssemblySync();
+			return;
+		}
+		if (level instanceof ServerLevel serverLevel)
+			AssemblySync.broadcast(serverLevel, host);
+	}
 
 	public void writeState(CompoundTag tag, HolderLookup.Provider registries) {
 		// Flush live block entities back into the assembly first, so the serialized structure

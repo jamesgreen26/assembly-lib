@@ -18,4 +18,12 @@ public interface AssemblyHostLevel {
 	/** The host whose assembly this level hosts, or {@code null} if it cannot be resolved. */
 	@Nullable
 	AssemblyHost getAssemblyHost();
+
+	/**
+	 * Ask the parent that owns this level to re-sync its whole structure to clients. A nested host
+	 * cannot reach watching clients on its own (they track the root, not the sim wrapper), so its
+	 * controller routes a sync request here; the server sim level forwards it to the parent, and the
+	 * client render level ignores it.
+	 */
+	default void requestAssemblySync() {}
 }

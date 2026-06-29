@@ -154,6 +154,13 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 		return realLevel.getBlockEntity(motorPos) instanceof AssemblyHost host ? host : null;
 	}
 
+	/** A nested host asked to re-sync: nudge the parent to re-broadcast the whole structure. */
+	@Override
+	public void requestAssemblySync() {
+		if (onNeedsSync != null)
+			onNeedsSync.run();
+	}
+
 	/** The assembly's current world pose, or {@code null} when none is available (e.g. tests). */
 	@Nullable
 	public AssemblyTransform getTransform() {

@@ -10,11 +10,13 @@ import com.assemblylib.debug.gametest.ServoMotorGameTests;
 import com.assemblylib.debug.item.ModCreativeTabs;
 import com.assemblylib.debug.item.ModItems;
 import com.assemblylib.impl.networking.AssemblyLibPackets;
+import com.assemblylib.impl.networking.AssemblySyncEvents;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +39,7 @@ public final class AssemblyLib {
         modEventBus.addListener(ModEntities::registerAttributes);
         modEventBus.addListener(AssemblyLibPackets::register);
         modEventBus.addListener(AssemblyLib::registerGameTests);
+        NeoForge.EVENT_BUS.register(AssemblySyncEvents.class);
 
         if (dist == Dist.CLIENT) {
             modEventBus.register(ClientSetup.class);

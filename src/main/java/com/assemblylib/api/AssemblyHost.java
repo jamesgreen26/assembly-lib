@@ -58,9 +58,6 @@ public interface AssemblyHost {
 	/** Mark the host's backing storage dirty for persistence (block entity {@code setChanged} / entity equivalent). */
 	void markAssemblyChanged();
 
-	/** Push the whole assembly to watching clients (block entity block-update / entity data sync). */
-	void syncAssemblyToClients();
-
 	/** The block state seeding the assembly's head cell (for the servo motor: the Servo Motor Head facing its direction). */
 	BlockState createHeadBlockState();
 

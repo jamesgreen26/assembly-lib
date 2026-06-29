@@ -88,8 +88,11 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 		setChanged();
 	}
 
-	@Override
-	public void syncAssemblyToClients() {
+	/**
+	 * Push this motor's own pose state (running / angle) to clients via a block-entity update — the
+	 * assembly structure itself syncs separately through {@link com.assemblylib.impl.assembly.AssemblyController#sync()}.
+	 */
+	private void syncSpinToClients() {
 		if (level != null && !level.isClientSide)
 			level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
 	}
@@ -126,7 +129,7 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 		if (powered != running) {
 			running = powered;
 			setChanged();
-			syncAssemblyToClients();
+			syncSpinToClients();
 		}
 		if (running)
 			angle = (angle + DEGREES_PER_TICK) % 360;
@@ -209,8 +212,9 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 
 	@Override
 	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		// Only the motor's own pose state rides the block-entity update; the assembly structure syncs
+		// on its own channel (AssemblySyncS2CPacket), sent to each player as they start tracking.
 		CompoundTag tag = super.getUpdateTag(registries);
-		controller.writeState(tag, registries);
 		writeSpin(tag);
 		return tag;
 	}
@@ -230,7 +234,6 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	@Override
 	public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider registries) {
 		boolean wasRunningWithAssembly = running && getAssembly() != null;
-		controller.readState(tag, registries);
 		readSpin(tag, wasRunningWithAssembly);
 	}
 

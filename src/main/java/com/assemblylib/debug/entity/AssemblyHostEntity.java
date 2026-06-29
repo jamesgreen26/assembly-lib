@@ -12,9 +12,6 @@ import org.joml.Matrix4f;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.syncher.EntityDataAccessor;
-import net.minecraft.network.syncher.EntityDataSerializers;
-import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.util.Mth;
@@ -41,8 +38,6 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 
 public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
-	private static final EntityDataAccessor<CompoundTag> DATA_ASSEMBLY =
-		SynchedEntityData.defineId(AssemblyHostEntity.class, EntityDataSerializers.COMPOUND_TAG);
 	private static final String ASSEMBLY_TAG = "HostedAssembly";
 
 	private static final double HOST_CELL_Y_OFFSET = 0.82;
@@ -68,12 +63,6 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 		goalSelector.addGoal(4, new RandomStrollGoal(this, 0.65, 80));
 		goalSelector.addGoal(5, new LookAtPlayerGoal(this, Player.class, 6.0f));
 		goalSelector.addGoal(6, new RandomLookAroundGoal(this));
-	}
-
-	@Override
-	protected void defineSynchedData(SynchedEntityData.@NotNull Builder builder) {
-		super.defineSynchedData(builder);
-		builder.define(DATA_ASSEMBLY, new CompoundTag());
 	}
 
 	@Override
@@ -144,15 +133,6 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	}
 
 	@Override
-	public void syncAssemblyToClients() {
-		if (level().isClientSide)
-			return;
-		CompoundTag tag = new CompoundTag();
-		controller.writeState(tag, registryAccess());
-		entityData.set(DATA_ASSEMBLY, tag);
-	}
-
-	@Override
 	public BlockState createHeadBlockState() {
 		return ModBlocks.SERVO_MOTOR_HEAD.get().defaultBlockState()
 			.setValue(ServoMotorHeadBlock.FACING, Direction.UP);
@@ -217,20 +197,10 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	@Override
 	public void readAdditionalSaveData(@NotNull CompoundTag tag) {
 		super.readAdditionalSaveData(tag);
-		if (tag.contains(ASSEMBLY_TAG)) {
+		// Server-side disk load only; clients receive the assembly via AssemblySyncS2CPacket when they
+		// start tracking this entity (and on every subsequent edit).
+		if (tag.contains(ASSEMBLY_TAG))
 			controller.readState(tag.getCompound(ASSEMBLY_TAG), registryAccess());
-			syncAssemblyToClients();
-		}
-	}
-
-	@Override
-	public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
-		super.onSyncedDataUpdated(key);
-		if (DATA_ASSEMBLY.equals(key) && level().isClientSide) {
-			CompoundTag tag = entityData.get(DATA_ASSEMBLY);
-			if (!tag.isEmpty())
-				controller.readState(tag, registryAccess());
-		}
 	}
 
 	@Override
