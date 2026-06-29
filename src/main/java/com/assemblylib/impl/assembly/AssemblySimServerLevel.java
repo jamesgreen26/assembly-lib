@@ -74,6 +74,13 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 	private final Assembly assembly;
 	/** World position of the host Servo Motor, so bespoke screens can resolve their BE through it. */
 	private final BlockPos motorPos;
+	/**
+	 * The host owning this assembly, so a nested host can find its parent. Held directly (like the client
+	 * {@link com.assemblylib.impl.client.renderer.assembly.AssemblyRenderLevel}) because resolving via
+	 * {@code getBlockEntity(motorPos)} only works for block-entity hosts — an <em>entity</em> host has no
+	 * block entity at that position.
+	 */
+	private final AssemblyHost host;
 	/** Notified after a write so the host BlockEntity can mark itself dirty ({@code setChanged}). */
 	@Nullable
 	private final Runnable onChanged;
@@ -107,12 +114,13 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 	/** Own (empty) fluid queue so any stray fluid tick never leaks onto the real level. */
 	private final LevelTicks<Fluid> fluidTicks = new LevelTicks<>(cp -> true, () -> InactiveProfiler.INSTANCE);
 
-	public AssemblySimServerLevel(ServerLevel level, Assembly assembly, BlockPos motorPos,
+	public AssemblySimServerLevel(ServerLevel level, Assembly assembly, BlockPos motorPos, AssemblyHost host,
 		@Nullable Runnable onChanged, @Nullable Runnable onNeedsSync, @Nullable Supplier<AssemblyTransform> transform) {
 		super(level);
 		this.realLevel = level;
 		this.assembly = assembly;
 		this.motorPos = motorPos;
+		this.host = host;
 		this.onChanged = onChanged;
 		this.onNeedsSync = onNeedsSync;
 		this.transform = transform;
@@ -149,9 +157,8 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 	}
 
 	@Override
-	@Nullable
 	public AssemblyHost getAssemblyHost() {
-		return realLevel.getBlockEntity(motorPos) instanceof AssemblyHost host ? host : null;
+		return host;
 	}
 
 	/** A nested host asked to re-sync: nudge the parent to re-broadcast the whole structure. */

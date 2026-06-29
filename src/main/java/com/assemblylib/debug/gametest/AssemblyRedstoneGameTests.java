@@ -1,6 +1,7 @@
 package com.assemblylib.debug.gametest;
 
 import com.assemblylib.AssemblyLib;
+import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.block.ServoMotorBlock;
 import com.assemblylib.debug.blockentity.ServoMotorBlockEntity;
@@ -63,7 +64,8 @@ public class AssemblyRedstoneGameTests {
 	}
 
 	private static AssemblySimServerLevel sim(GameTestHelper helper, Assembly c) {
-		return new AssemblySimServerLevel((ServerLevel) helper.getLevel(), c, MOTOR_POS, null, null, null);
+		AssemblyHost host = (AssemblyHost) helper.getBlockEntity(MOTOR_POS);
+		return new AssemblySimServerLevel((ServerLevel) helper.getLevel(), c, MOTOR_POS, host, null, null, null);
 	}
 
 	/** Insert a block into the structure without firing updates (builds the inert layout). */
@@ -535,10 +537,12 @@ public class AssemblyRedstoneGameTests {
 		Container chest = (Container) motor.getAssemblyController().getAssemblyBlockEntity(chestPos);
 		chest.setItem(0, new ItemStack(Items.DIAMOND, 5));
 
-		// getUpdateTag flushes live BEs into the assembly, then serializes it.
-		CompoundTag tag = motor.getUpdateTag(level.registryAccess()).getCompound("Assembly");
+		// writeState (the saveAdditional / sync serialization path) flushes live BEs into the assembly,
+		// then serializes it; getUpdateTag now carries only the motor's pose for a root host.
+		CompoundTag state = new CompoundTag();
+		motor.getAssemblyController().writeState(state, level.registryAccess());
 		Assembly reloaded = new Assembly();
-		reloaded.readNBT(level.registryAccess(), tag, level.getGameTime());
+		reloaded.readNBT(level.registryAccess(), state.getCompound("Assembly"), level.getGameTime());
 
 		Container reloadedChest = (Container) sim(helper, reloaded).getBlockEntity(chestPos);
 		if (reloadedChest == null || !reloadedChest.getItem(0).is(Items.DIAMOND)
@@ -560,7 +564,7 @@ public class AssemblyRedstoneGameTests {
 		Assembly c = motor.getAssembly();
 		ServerLevel level = (ServerLevel) helper.getLevel();
 
-		AssemblySimServerLevel sim = new AssemblySimServerLevel(level, c, MOTOR_POS, null, null,
+		AssemblySimServerLevel sim = new AssemblySimServerLevel(level, c, MOTOR_POS, motor, null, null,
 			() -> AssemblyTransform.ofCurrent(motor));
 		Vec3 spawnLocal = Vec3.atCenterOf(new BlockPos(0, 1, 0));
 		ItemEntity item = new ItemEntity(sim, spawnLocal.x, spawnLocal.y, spawnLocal.z, new ItemStack(Items.DIAMOND));
@@ -597,7 +601,7 @@ public class AssemblyRedstoneGameTests {
 		Assembly c = motor.getAssembly();
 		ServerLevel level = (ServerLevel) helper.getLevel();
 
-		AssemblySimServerLevel sim = new AssemblySimServerLevel(level, c, MOTOR_POS, null, null,
+		AssemblySimServerLevel sim = new AssemblySimServerLevel(level, c, MOTOR_POS, motor, null, null,
 			() -> AssemblyTransform.ofCurrent(motor));
 		Vec3 spawnLocal = Vec3.atCenterOf(new BlockPos(0, 1, 0));
 		Arrow arrow = new Arrow(sim, spawnLocal.x, spawnLocal.y, spawnLocal.z, ItemStack.EMPTY, null);

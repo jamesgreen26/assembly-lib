@@ -212,10 +212,16 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 
 	@Override
 	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
-		// Only the motor's own pose state rides the block-entity update; the assembly structure syncs
-		// on its own channel (AssemblySyncS2CPacket), sent to each player as they start tracking.
+		// A root motor's pose state rides the block-entity update; its assembly structure syncs on its
+		// own channel (AssemblySyncS2CPacket), sent to each player as they start tracking. A NESTED motor
+		// has no such channel — it reaches the client only embedded in its parent's structure sync, where
+		// the client rebuilds it from exactly this update tag (AssemblyRenderState#reconstruct). So a
+		// nested motor must carry its own assembly here, or it would arrive empty and be impossible to
+		// target or build on.
 		CompoundTag tag = super.getUpdateTag(registries);
 		writeSpin(tag);
+		if (assemblyParentHost() != null)
+			controller.writeState(tag, registries);
 		return tag;
 	}
 
@@ -235,6 +241,10 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider registries) {
 		boolean wasRunningWithAssembly = running && getAssembly() != null;
 		readSpin(tag, wasRunningWithAssembly);
+		// Adopt an embedded nested assembly when present (see getUpdateTag); a root motor's assembly
+		// instead arrives on its own AssemblySyncS2CPacket channel and this tag carries no structure.
+		if (tag.contains("Assembly"))
+			controller.readState(tag, registries);
 	}
 
 	private void writeSpin(CompoundTag tag) {

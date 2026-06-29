@@ -4,14 +4,18 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import com.assemblylib.AssemblyLib;
+import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.block.ServoMotorBlock;
 import com.assemblylib.debug.blockentity.ServoMotorBlockEntity;
+import com.assemblylib.debug.entity.AssemblyHostEntity;
+import com.assemblylib.debug.entity.ModEntities;
 import com.assemblylib.impl.assembly.Assembly;
 import com.assemblylib.impl.assembly.AssemblyPath;
 import com.assemblylib.impl.assembly.AssemblyTransform;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
@@ -187,6 +191,117 @@ public class AssemblyNestingGameTests {
 		}
 		if (path.resolve(level) != nested) {
 			helper.fail("Resolving the path should return the same live nested motor instance");
+			return;
+		}
+		helper.succeed();
+	}
+
+	/**
+	 * A nested motor's own assembly must reach the client, or the player can't target or build on it.
+	 * The client rebuilds a nested host purely from the per-cell update tag embedded in its parent's
+	 * structure sync ({@code AssemblyRenderState#reconstruct} -> {@code handleUpdateTag}); the dedicated
+	 * assembly-sync channel only reaches root hosts. Regression guard: the nested cell's update tag must
+	 * carry the nested assembly, so a BE rebuilt from it alone comes back with its structure intact.
+	 */
+	@GameTest(template = TEMPLATE)
+	public static void nestedMotorAssemblyReachesClientViaUpdateTag(GameTestHelper helper) {
+		ServerLevel level = (ServerLevel) helper.getLevel();
+		helper.setBlock(MOTOR_POS, ModBlocks.SERVO_MOTOR.get().defaultBlockState()
+			.setValue(ServoMotorBlock.FACING, Direction.EAST));
+		ServoMotorBlockEntity parent = (ServoMotorBlockEntity) helper.getBlockEntity(MOTOR_POS);
+		parent.initAssembly();
+
+		BlockPos nestedCell = new BlockPos(1, 0, 0);
+		parent.getAssembly().putBlock(nestedCell, ModBlocks.SERVO_MOTOR.get().defaultBlockState()
+			.setValue(ServoMotorBlock.FACING, Direction.UP), null, null);
+
+		// Tick the parent so the nested motor becomes a live BE and seeds its own (head) assembly.
+		parent.serverTick();
+		ServoMotorBlockEntity nested = parent.getNestedMotor(nestedCell);
+		if (nested == null || nested.getAssembly() == null) {
+			helper.fail("Nested motor should be live with its own assembly");
+			return;
+		}
+		int nestedBlocks = nested.getAssembly().getBlocks().size();
+
+		// Serialize the parent the way a save/sync does, then round-trip it back as a client would: the
+		// nested cell's update tag is what the client reconstructs the nested motor from.
+		CompoundTag parentState = new CompoundTag();
+		parent.getAssemblyController().writeState(parentState, level.registryAccess());
+		Assembly parentSynced = new Assembly();
+		parentSynced.readNBT(level.registryAccess(), parentState.getCompound("Assembly"), level.getGameTime());
+		CompoundTag nestedUpdateTag = parentSynced.getUpdateTags().get(nestedCell);
+		if (nestedUpdateTag == null) {
+			helper.fail("Parent's synced structure should carry a client update tag for the nested motor cell");
+			return;
+		}
+
+		// Mirror the client: rebuild a fresh BE from only that update tag.
+		ServoMotorBlockEntity rebuilt = new ServoMotorBlockEntity(nestedCell,
+			ModBlocks.SERVO_MOTOR.get().defaultBlockState().setValue(ServoMotorBlock.FACING, Direction.UP));
+		rebuilt.handleUpdateTag(nestedUpdateTag, level.registryAccess());
+
+		if (rebuilt.getAssembly() == null) {
+			helper.fail("Rebuilt nested motor should have its assembly from the update tag (client can't target it otherwise)");
+			return;
+		}
+		if (rebuilt.getAssembly().getBlocks().size() != nestedBlocks) {
+			helper.fail("Rebuilt nested assembly should match the live nested assembly (" + nestedBlocks
+				+ " blocks), got " + rebuilt.getAssembly().getBlocks().size());
+			return;
+		}
+		helper.succeed();
+	}
+
+	/**
+	 * Same as above but with an <em>entity</em> root host. The server resolves a nested host's parent
+	 * through its sim level; that lookup must work for an entity host (which has no block entity at its
+	 * position), or the nested host never discovers its parent and its assembly is never embedded into
+	 * the parent's client update tag — leaving it untargetable on the client. Regression guard for the
+	 * entity-root nesting path.
+	 */
+	@GameTest(template = TEMPLATE)
+	public static void nestedMotorOnEntityRootReachesClientViaUpdateTag(GameTestHelper helper) {
+		ServerLevel level = (ServerLevel) helper.getLevel();
+		AssemblyHostEntity entity = helper.spawn(ModEntities.ASSEMBLY_HOST.get(), new BlockPos(3, 2, 3));
+		if (entity.getAssembly() == null) {
+			helper.fail("Entity host should have seeded its assembly on spawn");
+			return;
+		}
+
+		BlockPos nestedCell = new BlockPos(0, 1, 1);
+		entity.getAssembly().putBlock(nestedCell, ModBlocks.SERVO_MOTOR.get().defaultBlockState()
+			.setValue(ServoMotorBlock.FACING, Direction.UP), null, null);
+
+		// Tick the entity so the nested motor becomes a live BE and seeds its own assembly.
+		entity.serverTick();
+		AssemblyHost nested = entity.getNestedHost(nestedCell);
+		if (nested == null || nested.getAssembly() == null) {
+			helper.fail("Nested motor on an entity root should be live with its own assembly");
+			return;
+		}
+		// The core of the entity-root regression: the nested host must discover its entity parent.
+		if (nested.assemblyParentHost() != entity) {
+			helper.fail("Nested host should resolve its parent to the entity root, was " + nested.assemblyParentHost());
+			return;
+		}
+		int nestedBlocks = nested.getAssembly().getBlocks().size();
+
+		CompoundTag parentState = new CompoundTag();
+		entity.getAssemblyController().writeState(parentState, level.registryAccess());
+		Assembly parentSynced = new Assembly();
+		parentSynced.readNBT(level.registryAccess(), parentState.getCompound("Assembly"), level.getGameTime());
+		CompoundTag nestedUpdateTag = parentSynced.getUpdateTags().get(nestedCell);
+		if (nestedUpdateTag == null || !nestedUpdateTag.contains("Assembly")) {
+			helper.fail("Entity root's synced structure should carry the nested motor's assembly in its update tag");
+			return;
+		}
+
+		ServoMotorBlockEntity rebuilt = new ServoMotorBlockEntity(nestedCell,
+			ModBlocks.SERVO_MOTOR.get().defaultBlockState().setValue(ServoMotorBlock.FACING, Direction.UP));
+		rebuilt.handleUpdateTag(nestedUpdateTag, level.registryAccess());
+		if (rebuilt.getAssembly() == null || rebuilt.getAssembly().getBlocks().size() != nestedBlocks) {
+			helper.fail("Rebuilt nested motor (entity root) should have its assembly from the update tag");
 			return;
 		}
 		helper.succeed();

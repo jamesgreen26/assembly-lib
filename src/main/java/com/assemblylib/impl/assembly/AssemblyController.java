@@ -205,7 +205,7 @@ public final class AssemblyController {
 	private AssemblySimServerLevel simLevel() {
 		if (simLevel == null || simLevel.getAssembly() != assembly)
 			simLevel = new AssemblySimServerLevel((ServerLevel) host.assemblyLevel(), assembly,
-				host.assemblyHostBlockPos(), host::markAssemblyChanged, () -> simNeedsSync = true,
+				host.assemblyHostBlockPos(), host, host::markAssemblyChanged, () -> simNeedsSync = true,
 				() -> AssemblyTransform.ofCurrent(host));
 		return simLevel;
 	}
