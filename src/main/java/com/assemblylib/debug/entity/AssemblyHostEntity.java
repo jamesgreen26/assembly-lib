@@ -14,10 +14,13 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.DifficultyInstance;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
@@ -27,6 +30,7 @@ import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -77,6 +81,24 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 			clientTick();
 		else
 			serverTick();
+	}
+
+	@Override
+	public void onAddedToLevel() {
+		super.onAddedToLevel();
+		if (!level().isClientSide && getAssembly() == null)
+			initAssembly();
+	}
+
+	@Override
+	@Nullable
+	@SuppressWarnings("deprecation")
+	public SpawnGroupData finalizeSpawn(ServerLevelAccessor level, DifficultyInstance difficulty,
+		MobSpawnType spawnType, @Nullable SpawnGroupData spawnGroupData) {
+		SpawnGroupData result = super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData);
+		if (!this.level().isClientSide && getAssembly() == null)
+			initAssembly();
+		return result;
 	}
 
 	@Override
@@ -169,7 +191,8 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 
 	@Override
 	public void remove(Entity.@NotNull RemovalReason reason) {
-		dropAssemblyOnce();
+		if (reason.shouldDestroy() && isAddedToLevel())
+			dropAssemblyOnce();
 		super.remove(reason);
 	}
 

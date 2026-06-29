@@ -9,6 +9,8 @@ import com.assemblylib.api.AssemblyHost;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.phys.Vec3;
 
@@ -22,14 +24,13 @@ import net.minecraft.world.phys.Vec3;
  * the path by walking up the host chain (client send side); {@link #resolve} walks back down to the
  * live host instance (both sides, via {@link AssemblyHost#getNestedHost}).
  *
- * <p>The root is abstracted behind {@link AssemblyRootId}; only a block-position root
- * ({@link BlockPosRoot}) is implemented today, but an entity (UUID) root drops in alongside it
- * without touching callers.
+ * <p>The root is abstracted behind {@link AssemblyRootId}; block-position roots identify
+ * block-entity hosts, and entity roots identify live entity hosts by network entity id.
  */
 public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 
 	/** How the root host of a path is named and resolved. */
-	public sealed interface AssemblyRootId permits BlockPosRoot {
+	public sealed interface AssemblyRootId permits BlockPosRoot, EntityRoot {
 
 		/** The live root host this id names, or {@code null} if it cannot be resolved. */
 		@Nullable
@@ -53,6 +54,24 @@ public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 		}
 	}
 
+	/** A root host identified by its live network entity id. */
+	public record EntityRoot(int entityId, Vec3 center) implements AssemblyRootId {
+		@Override
+		@Nullable
+		public AssemblyHost resolve(LevelReader level) {
+			if (level instanceof Level realLevel) {
+				Entity entity = realLevel.getEntity(entityId);
+				return entity instanceof AssemblyHost host ? host : null;
+			}
+			return null;
+		}
+
+		@Override
+		public Vec3 broadcastCenter() {
+			return center;
+		}
+	}
+
 	public static final StreamCodec<RegistryFriendlyByteBuf, AssemblyPath> STREAM_CODEC = new StreamCodec<>() {
 		@Override
 		public AssemblyPath decode(RegistryFriendlyByteBuf buffer) {
@@ -73,11 +92,13 @@ public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 		}
 	};
 
-	/** One-byte discriminator per {@link AssemblyRootId} kind (0 = block position). */
+	/** One-byte discriminator per {@link AssemblyRootId} kind (0 = block position, 1 = entity). */
 	private static AssemblyRootId decodeRoot(RegistryFriendlyByteBuf buffer) {
 		byte type = buffer.readByte();
 		return switch (type) {
 			case 0 -> new BlockPosRoot(buffer.readBlockPos());
+			case 1 -> new EntityRoot(buffer.readVarInt(),
+				new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble()));
 			default -> throw new IllegalArgumentException("Unknown assembly root type " + type);
 		};
 	}
@@ -86,6 +107,12 @@ public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 		if (root instanceof BlockPosRoot blockPos) {
 			buffer.writeByte(0);
 			buffer.writeBlockPos(blockPos.pos());
+		} else if (root instanceof EntityRoot entity) {
+			buffer.writeByte(1);
+			buffer.writeVarInt(entity.entityId());
+			buffer.writeDouble(entity.center().x);
+			buffer.writeDouble(entity.center().y);
+			buffer.writeDouble(entity.center().z);
 		} else {
 			throw new IllegalArgumentException("Unknown assembly root " + root);
 		}
@@ -100,7 +127,10 @@ public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 			cells.add(0, m.assemblyCellInParent()); // m's cell in the parent's local space
 			m = parent;
 		}
-		return new AssemblyPath(new BlockPosRoot(m.assemblyHostBlockPos()), cells);
+		AssemblyRootId root = m instanceof Entity entity
+			? new EntityRoot(entity.getId(), entity.position())
+			: new BlockPosRoot(m.assemblyHostBlockPos());
+		return new AssemblyPath(root, cells);
 	}
 
 	/** The live host this path names, or {@code null} if any link is missing. Works on either side. */
