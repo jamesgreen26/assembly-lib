@@ -118,11 +118,6 @@ public interface AssemblyHost {
 	}
 
 	@Nullable
-	default BlockEntity getAssemblyBlockEntity(BlockPos local) {
-		return assemblyController().getAssemblyBlockEntity(local);
-	}
-
-	@Nullable
 	default AssemblyHost getNestedHost(BlockPos local) {
 		return assemblyController().getNestedHost(local);
 	}
