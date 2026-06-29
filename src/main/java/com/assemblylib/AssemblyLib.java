@@ -1,14 +1,14 @@
 package com.assemblylib;
 
-import com.assemblylib.block.ModBlocks;
-import com.assemblylib.blockentity.ModBlockEntities;
-import com.assemblylib.client.ClientSetup;
-import com.assemblylib.gametest.AssemblyNestingGameTests;
-import com.assemblylib.gametest.AssemblyRedstoneGameTests;
-import com.assemblylib.gametest.ServoMotorGameTests;
-import com.assemblylib.item.ModCreativeTabs;
-import com.assemblylib.item.ModItems;
-import com.assemblylib.networking.AssemblyLibPackets;
+import com.assemblylib.debug.block.ModBlocks;
+import com.assemblylib.debug.blockentity.ModBlockEntities;
+import com.assemblylib.impl.client.ClientSetup;
+import com.assemblylib.debug.gametest.AssemblyNestingGameTests;
+import com.assemblylib.debug.gametest.AssemblyRedstoneGameTests;
+import com.assemblylib.debug.gametest.ServoMotorGameTests;
+import com.assemblylib.debug.item.ModCreativeTabs;
+import com.assemblylib.debug.item.ModItems;
+import com.assemblylib.impl.networking.AssemblyLibPackets;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;

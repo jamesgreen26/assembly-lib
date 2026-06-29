@@ -1,0 +1,385 @@
+package com.assemblylib.impl.assembly.collision;
+
+import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
+
+import javax.annotation.Nullable;
+
+import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.apache.commons.lang3.mutable.MutableFloat;
+import org.apache.commons.lang3.mutable.MutableObject;
+
+import com.assemblylib.impl.assembly.Assembly;
+import com.assemblylib.impl.assembly.AssemblyTransform;
+import com.assemblylib.impl.assembly.collision.CollisionList.Populate;
+import com.assemblylib.impl.assembly.collision.ContinuousOBBCollider.ContinuousSeparationManifold;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
+
+/**
+ * Pushes/carries entities that touch a rotating assembly. Driven from the
+ * host BlockEntity's tick on BOTH sides: the server resolves non-player
+ * entities, the client resolves its local player (player movement is
+ * client-authoritative, so resolving it server-side would only fight the client
+ * and feel like drag). Clean-room port of the core of Create's
+ * AssemblyCollider (single rotation axis, no translation); no com.simibubi.* references.
+ */
+public final class AssemblyCollider {
+
+	private AssemblyCollider() {}
+
+	/**
+	 * @param rootLevel     the real world the entities live in (the bottom of any nested-sim chain).
+	 * @param transform     the assembly's (possibly composed/nested) world&lt;-&gt;local pose.
+	 * @param worldBounds   generous world-space AABB enclosing the rotating structure.
+	 * @param contactMotion maps a world point on the structure to the platform's
+	 *                      velocity there this tick (for carrying riders).
+	 * @param shouldCollide which nearby entities to resolve this tick (used to split
+	 *                      player vs non-player handling by side).
+	 * @param onLanded      server-side callback invoked when a {@link FallingBlockEntity}
+	 *                      comes to rest on top of a assembly block, with the entity and
+	 *                      the local cell it should occupy; the handler captures it into the
+	 *                      structure. Null on the client (no authoritative capture).
+	 */
+	public static void collideEntities(Level rootLevel, AssemblyTransform transform,
+		Assembly assembly, AABB worldBounds, Function<Vec3, Vec3> contactMotion, Predicate<Entity> shouldCollide,
+		@Nullable BiConsumer<Entity, BlockPos> onLanded) {
+		if (assembly == null || assembly.isEmpty())
+			return;
+
+		Vec3 assemblyMotion = Vec3.ZERO; // in the assembly's local frame the structure is static
+
+		List<Entity> nearby = rootLevel.getEntitiesOfClass(Entity.class, worldBounds.inflate(2).expandTowards(0, 32, 0));
+		for (Entity entity : nearby) {
+			if (!entity.isAlive() || entity.isPassenger() || entity.noPhysics)
+				continue;
+			if (!shouldCollide.test(entity))
+				continue;
+
+			Matrix3d rotationMatrix = transform.worldToLocalRotation();
+
+			Vec3 entityPosition = entity.position();
+			AABB entityBounds = entity.getBoundingBox();
+			Vec3 motion = entity.getDeltaMovement();
+			Vec3 position = getWorldToLocalTranslation(entity, transform);
+
+			motion = motion.subtract(assemblyMotion);
+			motion = rotationMatrix.transform(motion);
+
+			AABB localBB = entityBounds.move(position).inflate(1.0E-7D);
+			OrientedBB obb = new OrientedBB(localBB);
+			// Orient the entity box without the assembly's world-Y yaw, so it shares the
+			// assembly's Y rotation (turns with a turntable) instead of keeping its
+			// world-aligned footprint. The full rotationMatrix is still used for the
+			// position/motion/result transforms.
+			obb.setRotation(transform.worldToLocalRotationNoWorldYaw());
+
+			CollisionList collidableBBs = new CollisionList();
+			getPotentiallyCollidedShapes(rootLevel, assembly, localBB.expandTowards(motion), new Populate(collidableBBs));
+			if (collidableBBs.size == 0)
+				continue;
+
+			MutableObject<Vec3> collisionResponse = new MutableObject<>(Vec3.ZERO);
+			MutableObject<Vec3> normal = new MutableObject<>(Vec3.ZERO);
+			MutableObject<Vec3> location = new MutableObject<>(Vec3.ZERO);
+			MutableBoolean surfaceCollision = new MutableBoolean(false);
+			MutableFloat temporalResponse = new MutableFloat(1);
+			Vec3 obbCenter = obb.getCenter();
+
+			boolean doHorizontalPass = !transform.hasVerticalRotation();
+			for (boolean horizontalPass : new boolean[] { true, false }) {
+				boolean verticalPass = !horizontalPass || !doHorizontalPass;
+
+				for (int bbIdx = 0; bbIdx < collidableBBs.size; ++bbIdx) {
+					Vec3 currentResponse = collisionResponse.getValue();
+					Vec3 currentCenter = obbCenter.add(currentResponse);
+
+					if (Math.abs(currentCenter.x - collidableBBs.centerX[bbIdx]) - entityBounds.getXsize() - 1 > collidableBBs.extentsX[bbIdx])
+						continue;
+					if (Math.abs((currentCenter.y + motion.y) - collidableBBs.centerY[bbIdx]) - entityBounds.getYsize() - 1 > collidableBBs.extentsY[bbIdx])
+						continue;
+					if (Math.abs(currentCenter.z - collidableBBs.centerZ[bbIdx]) - entityBounds.getZsize() - 1 > collidableBBs.extentsZ[bbIdx])
+						continue;
+
+					obb.setCenter(currentCenter);
+					ContinuousSeparationManifold intersect = obb.intersect(collidableBBs, bbIdx, motion);
+					if (intersect == null)
+						continue;
+					if (verticalPass && surfaceCollision.isFalse())
+						surfaceCollision.setValue(intersect.isSurfaceCollision());
+
+					double timeOfImpact = intersect.getTimeOfImpact();
+					boolean isTemporal = timeOfImpact > 0 && timeOfImpact < 1;
+					Vec3 collidingNormal = intersect.getCollisionNormal();
+					Vec3 collisionPosition = intersect.getCollisionPosition();
+
+					if (!isTemporal) {
+						Vec3 separation = intersect.asSeparationVec(entity.maxUpStep());
+						if (separation != null && !separation.equals(Vec3.ZERO)) {
+							collisionResponse.setValue(currentResponse.add(separation));
+							timeOfImpact = 0;
+						}
+					}
+
+					boolean nearest = timeOfImpact >= 0 && temporalResponse.getValue() > timeOfImpact;
+					if (collidingNormal != null && nearest)
+						normal.setValue(collidingNormal);
+					if (collisionPosition != null && nearest)
+						location.setValue(collisionPosition);
+
+					if (isTemporal && temporalResponse.getValue() > timeOfImpact)
+						temporalResponse.setValue((float) timeOfImpact);
+				}
+
+				if (verticalPass)
+					break;
+
+				boolean noVerticalMotionResponse = temporalResponse.getValue() == 1;
+				boolean noVerticalCollision = collisionResponse.getValue().y == 0;
+				if (noVerticalCollision && noVerticalMotionResponse)
+					break;
+
+				collisionResponse.setValue(collisionResponse.getValue().multiply(129 / 128f, 0, 129 / 128f));
+			}
+
+			Vec3 entityMotion = entity.getDeltaMovement();
+			Vec3 entityMotionNoTemporal = entityMotion;
+			Vec3 collisionNormal = normal.getValue();
+			Vec3 collisionLocation = location.getValue();
+			Vec3 totalResponse = collisionResponse.getValue();
+			boolean hardCollision = !totalResponse.equals(Vec3.ZERO);
+			boolean temporalCollision = temporalResponse.getValue() != 1;
+			Vec3 motionResponse = !temporalCollision ? motion
+				: motion.normalize().scale(motion.length() * temporalResponse.getValue());
+
+			Matrix3d localToWorld = transform.localToWorldRotation();
+			motionResponse = localToWorld.transform(motionResponse).add(assemblyMotion);
+			totalResponse = localToWorld.transform(totalResponse);
+			collisionNormal = localToWorld.transform(collisionNormal).normalize();
+			collisionLocation = localToWorld.transform(collisionLocation);
+
+			double bounce = 0;
+			double slide = 0;
+
+			if (!collisionLocation.equals(Vec3.ZERO)) {
+				collisionLocation = collisionLocation
+					.add(entity.position().add(entity.getBoundingBox().getCenter()).scale(.5f));
+				if (temporalCollision)
+					collisionLocation = collisionLocation.add(0, motionResponse.y, 0);
+
+				BlockPos localPos = BlockPos.containing(transform.worldToLocal(collisionLocation));
+				StructureBlockInfo info = assembly.getBlocks().get(localPos);
+				if (info != null) {
+					BlockState blockState = info.state();
+					bounce = getBounceMultiplier(blockState);
+					slide = Math.max(0, blockState.getFriction(rootLevel, localPos, entity) - .6f);
+				}
+			}
+
+			boolean hasNormal = !collisionNormal.equals(Vec3.ZERO);
+			boolean anyCollision = hardCollision || temporalCollision;
+
+			if (bounce > 0 && hasNormal && anyCollision && bounceEntity(entity, collisionNormal, contactMotion, bounce))
+				continue;
+
+			if (temporalCollision) {
+				double idealVerticalMotion = motionResponse.y;
+				if (idealVerticalMotion != entityMotion.y) {
+					entity.setDeltaMovement(entityMotion.multiply(1, 0, 1).add(0, idealVerticalMotion, 0));
+					entityMotion = entity.getDeltaMovement();
+				}
+			}
+
+			if (hardCollision) {
+				double motionX = entityMotion.x();
+				double motionY = entityMotion.y();
+				double motionZ = entityMotion.z();
+				double intersectX = totalResponse.x();
+				double intersectY = totalResponse.y();
+				double intersectZ = totalResponse.z();
+
+				double horizontalEpsilon = 1 / 128f;
+				if (motionX != 0 && Math.abs(intersectX) > horizontalEpsilon && motionX > 0 == intersectX < 0)
+					entityMotion = entityMotion.multiply(0, 1, 1);
+				if (motionY != 0 && intersectY != 0 && motionY > 0 == intersectY < 0)
+					entityMotion = entityMotion.multiply(1, 0, 1).add(0, assemblyMotion.y, 0);
+				if (motionZ != 0 && Math.abs(intersectZ) > horizontalEpsilon && motionZ > 0 == intersectZ < 0)
+					entityMotion = entityMotion.multiply(1, 1, 0);
+			}
+
+			if (bounce == 0 && slide > 0 && hasNormal && anyCollision && transform.hasVerticalRotation()) {
+				double slideFactor = collisionNormal.multiply(1, 0, 1).length() * 1.25f;
+				Vec3 motionIn = entityMotionNoTemporal.multiply(0, .9, 0).add(0, -.01f, 0);
+				Vec3 slideNormal = collisionNormal.cross(motionIn.cross(collisionNormal)).normalize();
+				Vec3 newMotion = entityMotion.multiply(.85, 0, .85)
+					.add(slideNormal.scale((.2f + slide) * motionIn.length() * slideFactor)
+						.add(0, -.1f - collisionNormal.y * .125f, 0));
+				entity.setDeltaMovement(newMotion);
+				entityMotion = entity.getDeltaMovement();
+			}
+
+			if (!hardCollision && surfaceCollision.isFalse())
+				continue;
+
+			Vec3 allowedMovement = collide(totalResponse, entity);
+			entity.setPos(entityPosition.x + allowedMovement.x, entityPosition.y + allowedMovement.y,
+				entityPosition.z + allowedMovement.z);
+			entityPosition = entity.position();
+			entity.hurtMarked = true;
+
+			if (surfaceCollision.isTrue()) {
+				// A falling block resting on top of a assembly block: capture it into the
+				// structure (it lands like it would on the ground) instead of hovering forever.
+				// Gated to the server, and to the feet cell being empty with a solid assembly
+				// block directly below, so side-brushes don't capture.
+				if (onLanded != null && !rootLevel.isClientSide && entity instanceof FallingBlockEntity) {
+					BlockPos landingCell = BlockPos.containing(transform.worldToLocal(entityPosition.add(0, 0.05, 0)));
+					boolean cellEmpty = !assembly.getBlocks().containsKey(landingCell);
+					boolean supportedBelow = assembly.getBlocks().containsKey(landingCell.below());
+					if (cellEmpty && supportedBelow) {
+						onLanded.accept(entity, landingCell);
+						continue;
+					}
+				}
+				entity.fallDistance = 0;
+				boolean canWalk = bounce != 0 || slide == 0;
+				if (canWalk || !transform.hasVerticalRotation())
+					if (canWalk)
+						entity.setOnGround(true);
+				if (entity instanceof ItemEntity || entity instanceof FallingBlockEntity)
+					entityMotion = entityMotion.multiply(.5f, 1, .5f);
+				Vec3 contactPointMotion = contactMotion.apply(entityPosition);
+				allowedMovement = collide(contactPointMotion, entity);
+				entity.setPos(entityPosition.x + allowedMovement.x, entityPosition.y,
+					entityPosition.z + allowedMovement.z);
+			}
+
+			entity.setDeltaMovement(entityMotion);
+		}
+	}
+
+	private static double getBounceMultiplier(BlockState state) {
+		return state.is(Blocks.SLIME_BLOCK) ? 0.8 : 0;
+	}
+
+	static boolean bounceEntity(Entity entity, Vec3 normal, Function<Vec3, Vec3> contactMotion, double factor) {
+		if (factor == 0 || entity.isSuppressingBounce())
+			return false;
+		Vec3 contactPointMotion = contactMotion.apply(entity.position());
+		Vec3 motion = entity.getDeltaMovement().subtract(contactPointMotion);
+		Vec3 deltav = normal.scale(factor * 2 * motion.dot(normal));
+		if (deltav.dot(deltav) < 0.1f)
+			return false;
+		entity.setDeltaMovement(entity.getDeltaMovement().subtract(deltav));
+		return true;
+	}
+
+	public static Vec3 getWorldToLocalTranslation(Entity entity, AssemblyTransform transform) {
+		Vec3 entityPosition = entity.position();
+		Vec3 centerY = new Vec3(0, entity.getBoundingBox().getYsize() / 2, 0);
+		Vec3 position = entityPosition.add(centerY);
+		position = transform.worldToLocal(position);
+		position = position.subtract(centerY);
+		position = position.subtract(entityPosition);
+		return position;
+	}
+
+	/** From Entity#collide — clip the requested movement against world block collisions. */
+	static Vec3 collide(Vec3 movement, Entity e) {
+		AABB aabb = e.getBoundingBox();
+		List<VoxelShape> list = e.level().getEntityCollisions(e, aabb.expandTowards(movement));
+		Vec3 vec3 = movement.lengthSqr() == 0.0D ? movement
+			: Entity.collideBoundingBox(e, movement, aabb, e.level(), list);
+		boolean flagX = movement.x != vec3.x;
+		boolean flagY = movement.y != vec3.y;
+		boolean flagZ = movement.z != vec3.z;
+		boolean flagDown = flagY && movement.y < 0.0D;
+		if (e.maxUpStep() > 0.0F && flagDown && (flagX || flagZ)) {
+			Vec3 stepUp = Entity.collideBoundingBox(e, new Vec3(movement.x, e.maxUpStep(), movement.z), aabb, e.level(), list);
+			Vec3 stepUpVertical = Entity.collideBoundingBox(e, new Vec3(0.0D, e.maxUpStep(), 0.0D),
+				aabb.expandTowards(movement.x, 0.0D, movement.z), e.level(), list);
+			if (stepUpVertical.y < e.maxUpStep()) {
+				Vec3 stepUpHorizontal = Entity
+					.collideBoundingBox(e, new Vec3(movement.x, 0.0D, movement.z), aabb.move(stepUpVertical), e.level(), list)
+					.add(stepUpVertical);
+				if (stepUpHorizontal.horizontalDistanceSqr() > stepUp.horizontalDistanceSqr())
+					stepUp = stepUpHorizontal;
+			}
+			if (stepUp.horizontalDistanceSqr() > vec3.horizontalDistanceSqr())
+				return stepUp.add(Entity.collideBoundingBox(e, new Vec3(0.0D, -stepUp.y + movement.y, 0.0D),
+					aabb.move(stepUp), e.level(), list));
+		}
+		return vec3;
+	}
+
+	private static void getPotentiallyCollidedShapes(Level level, Assembly assembly, AABB localBB, Populate out) {
+		double height = localBB.getYsize();
+		double width = localBB.getXsize();
+		double horizontalFactor = (height > width && width != 0) ? height / width : 1;
+		double verticalFactor = (width > height && height != 0) ? width / height : 1;
+		AABB blockScanBB = localBB.inflate(0.5f);
+		blockScanBB = blockScanBB.inflate(horizontalFactor, verticalFactor, horizontalFactor);
+
+		BlockPos min = BlockPos.containing(blockScanBB.minX, blockScanBB.minY, blockScanBB.minZ);
+		BlockPos max = BlockPos.containing(blockScanBB.maxX, blockScanBB.maxY, blockScanBB.maxZ);
+
+		for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+			StructureBlockInfo info = assembly.getBlocks().get(p);
+			if (info == null)
+				continue;
+			VoxelShape collisionShape = info.state().getCollisionShape(level, p)
+				.move(info.pos().getX(), info.pos().getY(), info.pos().getZ());
+			if (!collisionShape.isEmpty())
+				collisionShape.forAllBoxes(out);
+		}
+	}
+
+	public static boolean intersectsAssembly(Level level, Assembly assembly, AABB localBB,
+		Matrix3d entityRotation) {
+		if (assembly == null || assembly.isEmpty())
+			return false;
+
+		CollisionList collidableBBs = new CollisionList();
+		getPotentiallyCollidedShapes(level, assembly, localBB.inflate(1.0E-7D), new Populate(collidableBBs));
+		if (collidableBBs.size == 0)
+			return false;
+
+		OrientedBB obb = new OrientedBB(localBB.inflate(1.0E-7D));
+		obb.setRotation(entityRotation);
+		for (int bbIdx = 0; bbIdx < collidableBBs.size; ++bbIdx) {
+			if (obb.intersect(collidableBBs, bbIdx, Vec3.ZERO) != null)
+				return true;
+		}
+		return false;
+	}
+
+	public static boolean intersectsShape(VoxelShape localShape, BlockPos localPos, AABB localBB,
+		Matrix3d entityRotation) {
+		if (localShape.isEmpty())
+			return false;
+
+		CollisionList collidableBBs = new CollisionList();
+		localShape.move(localPos.getX(), localPos.getY(), localPos.getZ()).forAllBoxes(new Populate(collidableBBs));
+		if (collidableBBs.size == 0)
+			return false;
+
+		OrientedBB obb = new OrientedBB(localBB.inflate(1.0E-7D));
+		obb.setRotation(entityRotation);
+		for (int bbIdx = 0; bbIdx < collidableBBs.size; ++bbIdx) {
+			if (obb.intersect(collidableBBs, bbIdx, Vec3.ZERO) != null)
+				return true;
+		}
+		return false;
+	}
+}

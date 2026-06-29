@@ -1,6 +1,6 @@
 {
   "required": true,
-  "package": "com.assemblylib.mixin",
+  "package": "com.assemblylib.impl.mixin",
   "refmap": "assemblylib.mixins.refmap.json",
   "compatibilityLevel": "JAVA_21",
   "minVersion": "0.8",
