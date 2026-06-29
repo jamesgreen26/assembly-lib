@@ -14,6 +14,7 @@ import com.assemblylib.impl.assembly.AssemblyTransform;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
@@ -68,6 +69,22 @@ public class AssemblyRenderLevel extends AssemblySimLevel implements Visualizati
 	@Override
 	public BlockEntity getBlockEntity(BlockPos pos) {
 		return blockEntities.get(pos);
+	}
+
+	/**
+	 * The assembly's static blocks are flat-lit with the host's packed light, but a moving piston's block
+	 * is tesselated by {@code PistonHeadRenderer} against THIS level, which samples {@link #getBrightness}
+	 * at the assembly-LOCAL position. Left to the wrapped level that reads light near world origin (the
+	 * local coordinates), so the sliding block renders at the wrong brightness. Sample the real level at
+	 * the block's actual rotated world position instead, so it is lit like the rest of the structure
+	 * (mirrors {@link #forwardParticle}'s local-&gt;world mapping).
+	 */
+	@Override
+	public int getBrightness(LightLayer layer, BlockPos pos) {
+		if (transform == null)
+			return getLevel().getBrightness(layer, pos);
+		Vec3 world = transform.get().localToWorld(Vec3.atCenterOf(pos));
+		return getLevel().getBrightness(layer, BlockPos.containing(world));
 	}
 
 	@Override
