@@ -21,9 +21,11 @@ import net.minecraft.util.profiling.InactiveProfiler;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -59,7 +61,13 @@ import net.minecraft.world.ticks.TickPriority;
  * {@code beNbt}, bound to this level at the LOCAL position, and caches it. The owner ticks them
  * ({@link #getTickingBlockEntities}) so furnaces smelt / hoppers move items / comparators read
  * containers, and {@link #flushAllBlockEntityData} writes their live state back into the
- * assembly before save/sync. Pistons remain out of scope.
+ * assembly before save/sync.
+ *
+ * <p><b>Pistons</b> work too: {@link #blockEvent} queues their extend/retract onto the assembly and
+ * {@link #runAssemblyBlockEvents} (driven by the host each tick) dispatches it, while
+ * {@link #setBlockEntity} lands the {@link PistonMovingBlockEntity} that {@code moveBlocks} creates in
+ * our cache so it ticks and animates. Vanilla {@code PistonStructureResolver}/{@code moveBlocks} do the
+ * push/pull; entity-carry is the one gap (entities are redirected out of this sim level).
  *
  * <p>Constructing a {@code WrappedServerLevel} builds a full {@code ServerLevel}, so the owner
  * caches one instance per assembly rather than allocating per tick. Server-only — the client
@@ -195,9 +203,21 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 		if (info == null)
 			return null;
 		BlockState state = info.state();
+		BlockPos immutable = pos.immutable();
+		// MOVING_PISTON's block is an EntityBlock but its newBlockEntity returns null — the moving BE is
+		// normally created out-of-band by moveBlocks via setBlockEntity. Rebuild it here so a piston caught
+		// mid-slide by a save/reload (its beNbt was flushed into the map) resumes and finalizes rather than
+		// leaving a permanently stuck MOVING_PISTON with no ticker.
+		if (state.is(Blocks.MOVING_PISTON)) {
+			PistonMovingBlockEntity moving = new PistonMovingBlockEntity(immutable, state);
+			moving.setLevel(this);
+			if (info.nbt() != null)
+				moving.loadWithComponents(info.nbt(), registryAccess());
+			blockEntities.put(immutable, moving);
+			return moving;
+		}
 		if (!(state.getBlock() instanceof EntityBlock entityBlock))
 			return null;
-		BlockPos immutable = pos.immutable();
 		BlockEntity be = entityBlock.newBlockEntity(immutable, state);
 		if (be == null)
 			return null;
@@ -213,6 +233,19 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 		BlockEntity removed = blockEntities.remove(pos);
 		if (removed != null)
 			removed.setRemoved();
+		tickersDirty = true;
+	}
+
+	/**
+	 * The moving block of a piston push is a {@link PistonMovingBlockEntity} that {@code moveBlocks} creates
+	 * directly through this call (its block's {@code newBlockEntity} returns null). Land it in our cache —
+	 * not the wrapped level's dummy chunk, where it would be lost — so {@link #getBlockEntity} and the ticker
+	 * rebuild find it and animate/finalize the slide.
+	 */
+	@Override
+	public void setBlockEntity(BlockEntity be) {
+		be.setLevel(this);
+		blockEntities.put(be.getBlockPos().immutable(), be);
 		tickersDirty = true;
 	}
 
@@ -469,6 +502,35 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 			worldPos = BlockPos.containing(world);
 		}
 		rootRealLevel().levelEvent(null, type, worldPos, data);
+	}
+
+	/**
+	 * Pistons (and any block event) queue here instead of the inherited {@link ServerLevel}'s private
+	 * {@code blockEvents} set, which is only drained by {@code ServerLevel#tick} — never called for this
+	 * sim. The host drains the queue once per tick via {@link #runAssemblyBlockEvents}. Stored on the
+	 * {@link Assembly} so a transient sim instance never drops a pending event.
+	 */
+	@Override
+	public void blockEvent(BlockPos pos, Block block, int paramA, int paramB) {
+		assembly.enqueueBlockEvent(new BlockEventData(pos.immutable(), block, paramA, paramB));
+	}
+
+	/**
+	 * Drain the queued block events (piston extend/retract), mirroring {@code ServerLevel#runBlockEvents}:
+	 * loop until empty (dispatching one may enqueue another — a piston pushing a piston), re-read the cell's
+	 * current state and only fire when it still matches the queued block (it may have been mined since), then
+	 * dispatch {@code triggerEvent}. Called by the host each server tick, after block ticks and before block-
+	 * entity ticks, so a moving-piston BE created here is ticked the same tick.
+	 */
+	public void runAssemblyBlockEvents() {
+		BlockEventData event;
+		while ((event = assembly.pollBlockEvent()) != null) {
+			BlockState state = getBlockState(event.pos());
+			if (!state.is(event.block()))
+				continue;
+			if (state.triggerEvent(this, event.pos(), event.paramA(), event.paramB()) && onNeedsSync != null)
+				onNeedsSync.run();
+		}
 	}
 
 	@Override
