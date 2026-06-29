@@ -144,6 +144,10 @@ public final class AssemblyController {
 		// Drive the assembly's own block-tick queue (falling blocks, and redstone components
 		// like repeaters/observers/button-release), kept separate from the outer world's tick queue.
 		tickAssemblyBlocks();
+		// Dispatch queued block events (piston extend/retract) between block ticks and block-entity ticks,
+		// mirroring vanilla's block-ticks -> block-events -> entity order, so a moving-piston BE created here
+		// ticks the same tick.
+		runAssemblyBlockEvents();
 		// Tick live block entities (furnaces smelt, hoppers move items, …). Any structural change
 		// they make flips simNeedsSync via the sim level's onNeedsSync callback.
 		tickAssemblyBlockEntities();
@@ -238,6 +242,13 @@ public final class AssemblyController {
 			be = getAssemblyBlockEntity(local);
 		}
 		return be instanceof AssemblyHost h ? h : null;
+	}
+
+	/** Dispatch the assembly's queued block events (piston extend/retract) once (server-side). */
+	private void runAssemblyBlockEvents() {
+		if (!(host.assemblyLevel() instanceof ServerLevel))
+			return;
+		simLevel().runAssemblyBlockEvents();
 	}
 
 	/** Run the assembly's own block-tick queue once (server-side). */

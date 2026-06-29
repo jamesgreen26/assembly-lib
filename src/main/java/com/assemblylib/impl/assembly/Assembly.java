@@ -1,5 +1,6 @@
 package com.assemblylib.impl.assembly;
 
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -17,6 +18,7 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.profiling.InactiveProfiler;
+import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -55,6 +57,14 @@ public class Assembly {
 	private final LevelTicks<Block> blockTicks = new LevelTicks<>(cp -> true, () -> InactiveProfiler.INSTANCE);
 	private final Map<Long, LevelChunkTicks<Block>> tickContainers = new HashMap<>();
 
+	/**
+	 * Transient queue of pending block events (a piston's extend/retract). Lives on the assembly — like
+	 * {@link #blockTicks} and unlike the throwaway simulation-level instances — so an event survives a sim
+	 * rebuild; unlike block ticks it is never persisted (vanilla discards block events across save). Drained
+	 * once per server tick by the simulation level (see {@code AssemblySimServerLevel#runAssemblyBlockEvents}).
+	 */
+	private final ArrayDeque<BlockEventData> blockEvents = new ArrayDeque<>();
+
 	public Map<BlockPos, StructureBlockInfo> getBlocks() {
 		return blocks;
 	}
@@ -74,6 +84,20 @@ public class Assembly {
 	/** The assembly-local block-tick queue, driven each server tick by the Servo Motor. */
 	public LevelTicks<Block> getBlockTicks() {
 		return blockTicks;
+	}
+
+	/** Queue a block event (piston extend/retract) for the simulation level to dispatch this tick. */
+	public void enqueueBlockEvent(BlockEventData event) {
+		blockEvents.add(event);
+	}
+
+	/**
+	 * Remove and return the next queued block event, or {@code null} when the queue is empty. Drained in a
+	 * loop because dispatching one event may enqueue another (a piston pushing another piston).
+	 */
+	@Nullable
+	public BlockEventData pollBlockEvent() {
+		return blockEvents.poll();
 	}
 
 	/**

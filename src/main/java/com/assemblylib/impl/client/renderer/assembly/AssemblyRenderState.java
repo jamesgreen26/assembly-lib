@@ -16,8 +16,10 @@ import com.assemblylib.impl.assembly.AssemblyTransform;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -225,6 +227,17 @@ public class AssemblyRenderState {
 
 	@Nullable
 	private BlockEntity reconstruct(BlockState state, BlockPos localPos, @Nullable CompoundTag updateTag) {
+		// MovingPistonBlock#newBlockEntity returns null, so build the moving BE directly: the piston slide is
+		// drawn entirely by PistonHeadRenderer from this BE (the MOVING_PISTON block itself is invisible), and
+		// its client ticker (resolved in rebuildTickers) advances the animation progress.
+		if (state.is(Blocks.MOVING_PISTON)) {
+			PistonMovingBlockEntity moving = new PistonMovingBlockEntity(localPos, state);
+			moving.setLevel(renderLevel);
+			moving.setBlockState(state);
+			if (updateTag != null)
+				moving.handleUpdateTag(updateTag, level.registryAccess());
+			return moving;
+		}
 		if (!(state.getBlock() instanceof EntityBlock entityBlock))
 			return null;
 		BlockEntity be = entityBlock.newBlockEntity(localPos, state);
