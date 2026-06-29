@@ -123,6 +123,11 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 		return hostCellCorner().add(0.0, 1.0, 0.0);
 	}
 
+	/** Anchor at the render-interpolated position, so a moving host's pose matches the drawn blocks. */
+	private Vec3 assemblyAnchor(float partialTick) {
+		return hostCellCorner(partialTick).add(0.0, 1.0, 0.0);
+	}
+
 	@Override
 	public BlockPos headLocalPos() {
 		return BlockPos.ZERO.relative(Direction.DOWN);
@@ -149,7 +154,10 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	/** The mob drives the assembly straight off its own body yaw — no separate spin state. */
 	@Override
 	public Matrix4f getAssemblyTransform(float partialTick) {
-		return AssemblyTransform.spinMatrix(assemblyAnchor(), Mth.rotLerp(partialTick, yRotO, getYRot()),
+		// Interpolate the anchor position too: the entity renderer draws the assembly at the lerped
+		// position, so the outline/breaking pose must use the same lerped position or it drifts behind
+		// the visible blocks while the host is moving.
+		return AssemblyTransform.spinMatrix(assemblyAnchor(partialTick), Mth.rotLerp(partialTick, yRotO, getYRot()),
 			Direction.Axis.Y);
 	}
 
@@ -210,6 +218,13 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 
 	private Vec3 hostCellCorner() {
 		return position().add(-0.5, HOST_CELL_Y_OFFSET, -0.5);
+	}
+
+	private Vec3 hostCellCorner(float partialTick) {
+		double x = Mth.lerp(partialTick, xOld, getX());
+		double y = Mth.lerp(partialTick, yOld, getY());
+		double z = Mth.lerp(partialTick, zOld, getZ());
+		return new Vec3(x - 0.5, y + HOST_CELL_Y_OFFSET, z - 0.5);
 	}
 
 	private void dropAssemblyOnce() {
