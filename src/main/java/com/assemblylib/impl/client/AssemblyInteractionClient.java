@@ -105,7 +105,8 @@ public final class AssemblyInteractionClient {
 		if (supportMotor == null)
 			return null;
 
-		float yaw = supportMotor.getRotationAxis() == Direction.Axis.Y ? supportMotor.getAngle() : 0.0F;
+		AssemblyTransform support = AssemblyTransform.ofCurrent(supportMotor);
+		float yaw = support.hasVerticalRotation() ? 0.0F : support.yawDegrees();
 		Vec3 localMovement = AssemblyMath.rotate(new Vec3(movement.x, 0.0D, movement.z), -yaw, Direction.Axis.Y);
 		double xMovement = localMovement.x;
 		double zMovement = localMovement.z;
@@ -482,7 +483,7 @@ public final class AssemblyInteractionClient {
 			return;
 		}
 
-		float current = motor.getInterpolatedAngle(partialTick);
+		float current = AssemblyTransform.ofInterpolated(motor, partialTick).yawDegrees();
 		if (motor != ridingMotor) {
 			// Just stepped on: establish the baseline without an initial jump.
 			ridingMotor = motor;
@@ -510,12 +511,15 @@ public final class AssemblyInteractionClient {
 	@org.jetbrains.annotations.Nullable
 	private static AssemblyHost findRidingMotor(LocalPlayer player, float partialTick) {
 		for (AssemblyHost be : AssemblyHosts.ACTIVE_CLIENT) {
-			if (be.getRotationAxis() != Direction.Axis.Y || be.assemblyLevel() != player.level())
+			if (be.assemblyLevel() != player.level())
 				continue;
 			Assembly assembly = be.getAssembly();
 			if (assembly == null || assembly.isEmpty())
 				continue;
 			AssemblyTransform transform = AssemblyTransform.ofInterpolated(be, partialTick);
+			// Only a (horizontal) Y-axis turntable turns the rider; a tilted platform does not.
+			if (transform.hasVerticalRotation())
+				continue;
 			// Block supporting the player's feet, in assembly-local space.
 			Vec3 local = transform.worldToLocal(player.position());
 			BlockPos support = BlockPos.containing(local.x, local.y - 0.05, local.z);

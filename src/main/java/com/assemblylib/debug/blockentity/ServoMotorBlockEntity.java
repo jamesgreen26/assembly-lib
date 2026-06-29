@@ -5,6 +5,9 @@ import javax.annotation.Nullable;
 import com.assemblylib.impl.assembly.AssemblyController;
 import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.assembly.AssemblyHostLevel;
+import com.assemblylib.impl.assembly.AssemblyTransform;
+import com.assemblylib.impl.assembly.util.AssemblyMath;
+import org.joml.Matrix4f;
 import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.block.ServoMotorHeadBlock;
 import net.minecraft.core.BlockPos;
@@ -34,7 +37,15 @@ import net.minecraft.world.phys.AABB;
  */
 public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 
+	/** Rotation speed in degrees per tick (~16 RPM at 2°/t). This host's own spin policy. */
+	private static final float DEGREES_PER_TICK = 2f;
+
 	private final AssemblyController controller = new AssemblyController(this);
+
+	/** Host-owned rotation state: the motor spins itself, the controller only drives the structure. */
+	private float angle;
+	private float prevAngle;
+	private boolean running;
 
 	public ServoMotorBlockEntity(BlockPos pos, BlockState state) {
 		super(ModBlockEntities.SERVO_MOTOR.get(), pos, state);
@@ -89,8 +100,8 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 			.setValue(ServoMotorHeadBlock.FACING, getFacing());
 	}
 
-	@Override
-	public boolean isAssemblyPowered() {
+	/** Whether a redstone neighbour is currently powering the motor to spin. */
+	private boolean isPowered() {
 		return level != null && level.hasNeighborSignal(worldPosition);
 	}
 
@@ -100,6 +111,46 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 			return;
 		level.levelEvent(2001, worldPosition, Block.getId(getBlockState()));
 		level.removeBlock(worldPosition, false);
+	}
+
+	// endregion
+
+	// region host-owned rotation
+
+	@Override
+	public void serverTick() {
+		prevAngle = angle;
+		// Spins only while powered; the assembly is permanent either way. Sync the run state so
+		// clients advance the angle in lock-step.
+		boolean powered = isPowered();
+		if (powered != running) {
+			running = powered;
+			setChanged();
+			syncAssemblyToClients();
+		}
+		if (running)
+			angle = (angle + DEGREES_PER_TICK) % 360;
+		AssemblyHost.super.serverTick();
+	}
+
+	@Override
+	public void clientTick() {
+		prevAngle = angle;
+		if (running)
+			angle = (angle + DEGREES_PER_TICK) % 360;
+		AssemblyHost.super.clientTick();
+	}
+
+	@Override
+	public Matrix4f assemblyTransform(float partialTick) {
+		float interpolated = AssemblyMath.angleLerp(partialTick, prevAngle, angle);
+		return AssemblyTransform.spinMatrix(assemblyAnchor(), interpolated, getFacing().getAxis());
+	}
+
+	@Override
+	public Matrix4f assemblyTransformNext() {
+		float next = angle + (running ? DEGREES_PER_TICK : 0f);
+		return AssemblyTransform.spinMatrix(assemblyAnchor(), next, getFacing().getAxis());
 	}
 
 	// endregion
@@ -145,18 +196,22 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
 		super.saveAdditional(tag, registries);
 		controller.writeState(tag, registries);
+		writeSpin(tag);
 	}
 
 	@Override
 	protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
 		super.loadAdditional(tag, registries);
+		boolean wasRunningWithAssembly = running && getAssembly() != null;
 		controller.readState(tag, registries);
+		readSpin(tag, wasRunningWithAssembly);
 	}
 
 	@Override
 	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
 		CompoundTag tag = super.getUpdateTag(registries);
 		controller.writeState(tag, registries);
+		writeSpin(tag);
 		return tag;
 	}
 
@@ -174,7 +229,27 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 
 	@Override
 	public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider registries) {
+		boolean wasRunningWithAssembly = running && getAssembly() != null;
 		controller.readState(tag, registries);
+		readSpin(tag, wasRunningWithAssembly);
+	}
+
+	private void writeSpin(CompoundTag tag) {
+		tag.putBoolean("Running", running);
+		tag.putFloat("Angle", angle);
+	}
+
+	private void readSpin(CompoundTag tag, boolean wasRunningWithAssembly) {
+		running = tag.getBoolean("Running");
+		// A structure edit (break/place) re-syncs the whole host while it keeps spinning. The client
+		// advances the angle deterministically every tick, so adopting the packet's (already stale)
+		// angle here would snap the rotation. Keep the client's free-running angle in that case;
+		// otherwise (initial load) adopt the synced angle.
+		boolean keepFreeRunning = level != null && level.isClientSide && wasRunningWithAssembly && running;
+		if (!keepFreeRunning) {
+			angle = tag.getFloat("Angle");
+			prevAngle = angle;
+		}
 	}
 
 	// endregion

@@ -7,6 +7,8 @@ import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.block.ServoMotorHeadBlock;
 import com.assemblylib.debug.item.ModItems;
 import com.assemblylib.impl.assembly.AssemblyController;
+import com.assemblylib.impl.assembly.AssemblyTransform;
+import org.joml.Matrix4f;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -157,11 +159,6 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	}
 
 	@Override
-	public boolean isAssemblyPowered() {
-		return false;
-	}
-
-	@Override
 	public void breakWholeHost(ServerPlayer player) {
 		if (level().isClientSide)
 			return;
@@ -169,19 +166,20 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 		discard();
 	}
 
+	/** The mob drives the assembly straight off its own body yaw — no separate spin state. */
 	@Override
-	public float getAngle() {
-		return getYRot();
+	public Matrix4f assemblyTransform(float partialTick) {
+		return AssemblyTransform.spinMatrix(assemblyAnchor(), Mth.rotLerp(partialTick, yRotO, getYRot()),
+			Direction.Axis.Y);
 	}
 
 	@Override
-	public float getInterpolatedAngle(float partialTick) {
-		return Mth.rotLerp(partialTick, yRotO, getYRot());
-	}
-
-	@Override
-	public float getIntendedSpin() {
-		return Mth.wrapDegrees(getYRot() - yRotO);
+	public Matrix4f assemblyTransformNext() {
+		// Project the next pose forward by both this tick's body rotation AND its actual translation,
+		// so a rider is carried along as the mob walks (not just turned as it spins).
+		float next = getYRot() + Mth.wrapDegrees(getYRot() - yRotO);
+		Vec3 motion = position().subtract(xOld, yOld, zOld);
+		return AssemblyTransform.spinMatrix(assemblyAnchor().add(motion), next, Direction.Axis.Y);
 	}
 
 	@Override

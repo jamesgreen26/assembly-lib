@@ -1,11 +1,11 @@
 package com.assemblylib.impl.client.renderer.assembly;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
 
 import dev.engine_room.flywheel.api.visualization.VisualizationManager;
 import dev.engine_room.flywheel.lib.visualization.VisualizationHelper;
 import com.assemblylib.impl.assembly.Assembly;
+import com.assemblylib.impl.assembly.AssemblyTransform;
 import com.assemblylib.api.AssemblyHost;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -35,16 +35,16 @@ public final class AssemblyRenderer {
 
 	public static void render(AssemblyHost host, float partialTick, PoseStack poseStack, MultiBufferSource buffers,
 		int packedLight, int packedOverlay) {
-		float angle = host.getInterpolatedAngle(partialTick);
 		Direction facing = host.assemblyFacing();
 		boolean flywheelActive = host.assemblyLevel() != null
 			&& VisualizationManager.supportsVisualization(host.assemblyLevel());
 
 		poseStack.pushPose();
-		// Renderer origin is the host's own cell corner; shift to the anchor block and pivot there.
+		// Renderer origin is the host's own cell corner; shift to the anchor block and pivot there by
+		// the host's own (leaf) rotation, taken straight from its transform.
 		poseStack.translate(facing.getStepX(), facing.getStepY(), facing.getStepZ());
 		poseStack.translate(0.5, 0.5, 0.5);
-		poseStack.mulPose(axisRotation(facing.getAxis(), angle));
+		poseStack.mulPose(AssemblyTransform.rotationOf(host.assemblyTransform(partialTick)));
 		poseStack.translate(-0.5, -0.5, -0.5);
 
 		// The head's own block is invisible; draw the piston-head model directly off the host's
@@ -119,11 +119,4 @@ public final class AssemblyRenderer {
 		}
 	}
 
-	private static org.joml.Quaternionf axisRotation(Direction.Axis axis, float degrees) {
-		return switch (axis) {
-			case X -> Axis.XP.rotationDegrees(degrees);
-			case Y -> Axis.YP.rotationDegrees(degrees);
-			case Z -> Axis.ZP.rotationDegrees(degrees);
-		};
-	}
 }

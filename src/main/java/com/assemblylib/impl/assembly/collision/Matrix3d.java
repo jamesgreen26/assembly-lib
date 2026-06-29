@@ -131,6 +131,17 @@ public class Matrix3d {
 	}
 
 	/**
+	 * Set this matrix to the rotation (upper-left 3x3) of a JOML column-major 4x4 transform. JOML's
+	 * {@code m<col><row>()} accessors are column-major, so the element at (row, col) is {@code m<col><row>}.
+	 */
+	public Matrix3d setRotationFrom(Matrix4f m) {
+		m00 = m.m00(); m01 = m.m10(); m02 = m.m20();
+		m10 = m.m01(); m11 = m.m11(); m12 = m.m21();
+		m20 = m.m02(); m21 = m.m12(); m22 = m.m22();
+		return this;
+	}
+
+	/**
 	 * The rotation this (orthonormal) matrix represents, as a quaternion. Dist-safe (server uses it to
 	 * tag a detached falling block with its inherited assembly orientation). JOML's {@link Matrix3f}
 	 * is column-major, so each {@code mRC} (row R, col C) of this matrix is supplied as that column's row.

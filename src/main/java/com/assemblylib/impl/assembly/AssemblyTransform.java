@@ -2,8 +2,7 @@ package com.assemblylib.impl.assembly;
 
 import com.assemblylib.api.AssemblyHost;
 import org.joml.Matrix4f;
-
-import com.mojang.math.Axis;
+import org.joml.Quaternionf;
 
 import com.assemblylib.impl.assembly.collision.Matrix3d;
 import com.assemblylib.impl.assembly.util.AssemblyMath;
@@ -34,23 +33,44 @@ public final class AssemblyTransform {
 	private final Vec3 translation;
 	/** Cached world -> local rotation ({@code rotation} transposed). */
 	private final Matrix3d invRotation;
-	/** This motor's own (un-composed) rotation, for placement/falling-block use. */
-	private final Direction.Axis leafAxis;
-	private final float leafAngle;
 
-	private AssemblyTransform(Matrix3d rotation, Vec3 translation, Direction.Axis leafAxis, float leafAngle) {
+	private AssemblyTransform(Matrix3d rotation, Vec3 translation) {
 		this.rotation = rotation;
 		this.translation = translation;
 		this.invRotation = rotation.copy().transpose();
-		this.leafAxis = leafAxis;
-		this.leafAngle = leafAngle;
 	}
 
 	/** A single (un-composed) assembly transform about {@code anchor}. */
 	public static AssemblyTransform leaf(Vec3 anchor, float angle, Direction.Axis axis) {
 		Matrix3d r = rotationMatrix(angle, axis);
 		Vec3 t = AssemblyMath.CENTER_OF_ORIGIN.subtract(r.transform(AssemblyMath.CENTER_OF_ORIGIN)).add(anchor);
-		return new AssemblyTransform(r, t, axis, angle);
+		return new AssemblyTransform(r, t);
+	}
+
+	/**
+	 * Build the leaf local -> reference-frame 4x4 matrix for a rotation about {@code anchor}: the
+	 * standard pose a spinning host hands back from {@link AssemblyHost#assemblyTransform(float)}.
+	 * Pure JOML (no {@code com.mojang.math.Axis}) so it is dist-safe and runs server-side.
+	 */
+	public static Matrix4f spinMatrix(Vec3 anchor, float angleDeg, Direction.Axis axis) {
+		float rad = (float) Math.toRadians(angleDeg);
+		Matrix4f m = new Matrix4f();
+		m.translate((float) anchor.x, (float) anchor.y, (float) anchor.z);
+		m.translate(0.5f, 0.5f, 0.5f);
+		switch (axis) {
+			case X -> m.rotateX(rad);
+			case Y -> m.rotateY(rad);
+			case Z -> m.rotateZ(rad);
+		}
+		m.translate(-0.5f, -0.5f, -0.5f);
+		return m;
+	}
+
+	/** Adapt a host-supplied 4x4 leaf transform (local -> its reference frame) into an {@link AssemblyTransform}. */
+	public static AssemblyTransform fromMatrix(Matrix4f leaf) {
+		Matrix3d r = new Matrix3d().setRotationFrom(leaf);
+		Vec3 t = new Vec3(leaf.m30(), leaf.m31(), leaf.m32());
+		return new AssemblyTransform(r, t);
 	}
 
 	/**
@@ -61,42 +81,35 @@ public final class AssemblyTransform {
 	public AssemblyTransform andThen(AssemblyTransform parent) {
 		Matrix3d r = parent.rotation.copy().multiply(this.rotation);
 		Vec3 t = parent.rotation.transform(this.translation).add(parent.translation);
-		return new AssemblyTransform(r, t, this.leafAxis, this.leafAngle);
+		return new AssemblyTransform(r, t);
 	}
 
-	/** Transform for the interpolated client render angle at {@code partialTick}, composed through any host. */
+	/** Transform for the interpolated client render pose at {@code partialTick}, composed through any host. */
 	public static AssemblyTransform ofInterpolated(AssemblyHost be, float partialTick) {
-		AssemblyTransform self = leaf(anchorOf(be), be.getInterpolatedAngle(partialTick), be.getRotationAxis());
+		AssemblyTransform self = fromMatrix(be.assemblyTransform(partialTick));
 		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofInterpolated(host, partialTick));
 	}
 
-	/** Transform for the raw (server / current) angle, composed through any host assembly. */
+	/** Transform for the raw (server / current) pose, composed through any host assembly. */
 	public static AssemblyTransform ofCurrent(AssemblyHost be) {
-		AssemblyTransform self = leaf(anchorOf(be), be.getAngle(), be.getRotationAxis());
+		AssemblyTransform self = fromMatrix(be.assemblyTransform(1.0f));
 		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofCurrent(host));
 	}
 
 	/**
-	 * Transform for the pose every motor in the chain will hold after advancing one more tick by its
-	 * <em>intended</em> per-tick spin ({@code running ? DEGREES_PER_TICK : 0}). Differencing
-	 * {@code ofCurrent} and {@code ofIntendedNext} at a platform point yields its carried velocity,
-	 * including a parent's angular velocity sweeping a nested pivot. Using the intended spin (not
-	 * {@code angle - prevAngle}) makes it correct both for riders resolved <em>after</em> the angle
-	 * advances and for a block detaching <em>before</em> it. Server-side.
+	 * Transform for the pose every host in the chain will hold after advancing one more tick by its
+	 * own intended motion ({@link AssemblyHost#assemblyTransformNext()}). Differencing {@code ofCurrent}
+	 * and {@code ofIntendedNext} at a platform point yields its carried velocity, including a parent's
+	 * angular velocity sweeping a nested pivot. The host decides what "one tick forward" means (a spin
+	 * step, a translation, …), so a stopped host reports the same pose and thus no carried motion.
+	 * Server-side.
 	 */
 	public static AssemblyTransform ofIntendedNext(AssemblyHost be) {
-		float next = be.getAngle() + be.getIntendedSpin();
-		AssemblyTransform self = leaf(anchorOf(be), next, be.getRotationAxis());
+		AssemblyTransform self = fromMatrix(be.assemblyTransformNext());
 		AssemblyHost host = be.assemblyParentHost();
 		return host == null ? self : self.andThen(ofIntendedNext(host));
-	}
-
-	private static Vec3 anchorOf(AssemblyHost be) {
-		// For a nested host this is its cell in the PARENT's local space; composition through the
-		// host transform lifts it to world space.
-		return be.assemblyAnchor();
 	}
 
 	private static Matrix3d rotationMatrix(float angleDeg, Direction.Axis axis) {
@@ -108,14 +121,14 @@ public final class AssemblyTransform {
 		};
 	}
 
-	/** This motor's own rotation angle (NOT the composed angle); for placement / falling-block use. */
-	public float angle() {
-		return leafAngle;
-	}
-
-	/** This motor's own rotation axis (NOT meaningful for the composed rotation). */
-	public Direction.Axis axis() {
-		return leafAxis;
+	/**
+	 * The platform's yaw (rotation about world Y) in degrees, extracted from the composed rotation:
+	 * zero for a pure tilt (X/Z) transform and equal to a Y-turntable's angle. Used to measure
+	 * player-relative block placement and to turn a rider with a turntable.
+	 */
+	public float yawDegrees() {
+		Vec3 localXInWorld = rotation.transform(new Vec3(1, 0, 0));
+		return (float) Math.toDegrees(Math.atan2(-localXInWorld.z, localXInWorld.x));
 	}
 
 	public Vec3 worldToLocal(Vec3 world) {
@@ -198,14 +211,15 @@ public final class AssemblyTransform {
 		return pose;
 	}
 
+	/** The leaf rotation of a host-supplied 4x4 transform, as a quaternion (for render embedding). */
+	public static Quaternionf rotationOf(Matrix4f leaf) {
+		return leaf.getNormalizedRotation(new Quaternionf());
+	}
+
 	/** Shared pivot rotation about a block's center used by the renderer and interaction. */
-	public static void pivotRotate(Matrix4f pose, Direction.Axis axis, float angle) {
+	public static void pivotRotate(Matrix4f pose, Quaternionf rotation) {
 		pose.translate(0.5f, 0.5f, 0.5f);
-		switch (axis) {
-			case X -> pose.rotate(Axis.XP.rotationDegrees(angle));
-			case Y -> pose.rotate(Axis.YP.rotationDegrees(angle));
-			case Z -> pose.rotate(Axis.ZP.rotationDegrees(angle));
-		}
+		pose.rotate(rotation);
 		pose.translate(-0.5f, -0.5f, -0.5f);
 	}
 }

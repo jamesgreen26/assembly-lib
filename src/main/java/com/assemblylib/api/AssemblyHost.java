@@ -4,6 +4,7 @@ import javax.annotation.Nullable;
 
 import com.assemblylib.impl.assembly.*;
 import com.assemblylib.impl.client.renderer.assembly.AssemblyRenderState;
+import org.joml.Matrix4f;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
@@ -63,8 +64,24 @@ public interface AssemblyHost {
 	/** The block state seeding the assembly's head cell (for the servo motor: the Servo Motor Head facing its direction). */
 	BlockState createHeadBlockState();
 
-	/** Whether the host is currently powered to spin (for the servo motor: a redstone neighbour signal). */
-	boolean isAssemblyPowered();
+	/**
+	 * The host-owned leaf transform mapping assembly-local space into the host's reference frame (the
+	 * real world for a root host, the parent's local space when nested), at the given partial tick
+	 * ({@code 1.0} = the current server pose). The host fully decides its own motion here — spin about
+	 * an axis, translate, tilt, or stay put — so the library no longer bakes in any rotation policy.
+	 * {@link AssemblyTransform#spinMatrix} builds the common "spin about an axis at an anchor" pose.
+	 */
+	Matrix4f assemblyTransform(float partialTick);
+
+	/**
+	 * The leaf transform the host will hold after advancing one more tick by its own intended motion,
+	 * used to carry riders and release detaching blocks with the platform velocity. Defaults to the
+	 * current pose (no carried motion); a moving host overrides it to project its spin/translation
+	 * forward one tick.
+	 */
+	default Matrix4f assemblyTransformNext() {
+		return assemblyTransform(1.0f);
+	}
 
 	/** Tear the whole host down (head broken): for the servo motor, play the break effect and remove the block. */
 	void breakWholeHost(ServerPlayer player);
@@ -94,26 +111,6 @@ public interface AssemblyHost {
 	@Nullable
 	default Assembly getAssembly() {
 		return assemblyController().getAssembly();
-	}
-
-	default float getAngle() {
-		return assemblyController().getAngle();
-	}
-
-	default float getInterpolatedAngle(float partialTick) {
-		return assemblyController().getInterpolatedAngle(partialTick);
-	}
-
-	default float getIntendedSpin() {
-		return assemblyController().getIntendedSpin();
-	}
-
-	default boolean isRunning() {
-		return assemblyController().isRunning();
-	}
-
-	default Direction.Axis getRotationAxis() {
-		return assemblyController().getRotationAxis();
 	}
 
 	@Nullable

@@ -13,13 +13,11 @@ import javax.annotation.Nullable;
 import com.assemblylib.AssemblyLib;
 import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.assembly.collision.AssemblyCollider;
-import com.assemblylib.impl.assembly.util.AssemblyMath;
 import com.assemblylib.impl.client.renderer.assembly.AssemblyRenderState;
 import com.assemblylib.impl.mixin.FallingBlockEntityInvoker;
 import com.assemblylib.impl.mixin.ServerGamePacketListenerImplAccessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.Direction.Axis;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
@@ -60,9 +58,6 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  */
 public final class AssemblyController {
 
-	/** Rotation speed in degrees per tick (~16 RPM at 2°/t). */
-	public static final float DEGREES_PER_TICK = 2f;
-
 	/** Max squared distance from a player to an assembly block for break/place. */
 	private static final double INTERACT_RANGE_SQR = 7.0 * 7.0;
 
@@ -70,13 +65,8 @@ public final class AssemblyController {
 
 	@Nullable
 	private Assembly assembly;
-	private boolean running;
 	/** Set while we tear the host down ourselves so {@link #onHostRemoved} doesn't double-drop. */
 	private boolean suppressRemovalDrops;
-	private Axis rotationAxis = Axis.Y;
-
-	private float angle;
-	private float prevAngle;
 
 	/** Client-only cache of reconstructed block entities for rendering. */
 	@Nullable
@@ -111,31 +101,9 @@ public final class AssemblyController {
 			assembly = predicted;
 	}
 
-	public boolean isRunning() {
-		return running;
-	}
-
 	/** Number of blocks in the assembly (head included), at least 1, for break-speed scaling. */
 	public int getAssemblyBlockCount() {
 		return assembly == null ? 1 : Math.max(1, assembly.getBlocks().size());
-	}
-
-	public float getInterpolatedAngle(float partialTick) {
-		return AssemblyMath.angleLerp(partialTick, prevAngle, angle);
-	}
-
-	/** Raw current rotation angle in degrees (server-authoritative). */
-	public float getAngle() {
-		return angle;
-	}
-
-	/** The intended rotation this tick (used to project carried/release velocity forward). */
-	public float getIntendedSpin() {
-		return running ? DEGREES_PER_TICK : 0f;
-	}
-
-	public Axis getRotationAxis() {
-		return rotationAxis;
 	}
 
 	/**
@@ -163,24 +131,14 @@ public final class AssemblyController {
 	// region ticking
 
 	public void serverTick() {
-		prevAngle = angle;
-
 		// Pre-assembled on placement; lazily seed the head for hosts created another way
 		// (e.g. /setblock) so the assembly always exists.
 		if (assembly == null)
 			initAssembly();
-
-		// Spins only while powered; the assembly is permanent either way.
-		boolean powered = host.isAssemblyPowered();
-		if (powered != running) {
-			running = powered;
-			host.markAssemblyChanged();
-			host.syncAssemblyToClients();
-		}
-
 		if (assembly == null)
 			return;
 
+		// The host owns its own pose (spin/translation); this drives only the assembly's contents.
 		// Drive the assembly's own block-tick queue (falling blocks, and redstone components
 		// like repeaters/observers/button-release), kept separate from the outer world's tick queue.
 		tickAssemblyBlocks();
@@ -192,8 +150,6 @@ public final class AssemblyController {
 			host.syncAssemblyToClients();
 		}
 
-		if (running)
-			angle = (angle + DEGREES_PER_TICK) % 360;
 		// Resolve non-player entities here (players are resolved client-side). A stopped
 		// assembly is still solid; only the carry motion goes to zero.
 		collide(entity -> !(entity instanceof Player));
@@ -203,7 +159,6 @@ public final class AssemblyController {
 	}
 
 	public void clientTick() {
-		prevAngle = angle;
 		// Targeting/building/breaking work even while stopped, so track any host that has an
 		// assembly — not just spinning ones.
 		if (assembly == null) {
@@ -211,9 +166,6 @@ public final class AssemblyController {
 			return;
 		}
 		AssemblyHosts.ACTIVE_CLIENT.add(host);
-
-		if (running)
-			angle = (angle + DEGREES_PER_TICK) % 360;
 
 		// Client-tick the captured block entities so their renderers animate like normal world BEs
 		// (chest lids, spawner spin, campfire smoke, conduit frames, …).
@@ -485,15 +437,12 @@ public final class AssemblyController {
 			return;
 
 		Direction facing = host.assemblyFacing();
-		rotationAxis = facing.getAxis();
 		BlockPos anchor = host.assemblyHostBlockPos().relative(facing);
 		Assembly next = new Assembly();
 		next.setAnchor(anchor);
 		next.putBlock(host.headLocalPos(), host.createHeadBlockState(), null, null);
 
 		assembly = next;
-		angle = 0;
-		prevAngle = 0;
 		host.markAssemblyChanged();
 		host.syncAssemblyToClients();
 	}
@@ -506,7 +455,6 @@ public final class AssemblyController {
 		if (!suppressRemovalDrops && assembly != null)
 			dropAssemblyLoot(ItemStack.EMPTY);
 		assembly = null;
-		running = false;
 	}
 
 	// endregion
@@ -585,8 +533,7 @@ public final class AssemblyController {
 							local.getY() + relY * sizeY + minY,
 							local.getZ() + relZ * sizeZ + minZ);
 						Vec3 worldParticle = transform.localToWorld(localParticle);
-						Vec3 velocity = AssemblyMath.rotate(new Vec3(relX - 0.5D, relY - 0.5D, relZ - 0.5D),
-							transform.angle(), transform.axis());
+						Vec3 velocity = transform.localDirToWorld(new Vec3(relX - 0.5D, relY - 0.5D, relZ - 0.5D));
 						serverLevel.sendParticles(particle, worldParticle.x, worldParticle.y, worldParticle.z, 0,
 							velocity.x, velocity.y, velocity.z, 1.0D);
 					}
@@ -853,9 +800,6 @@ public final class AssemblyController {
 	// region sync + persistence
 
 	public void writeState(CompoundTag tag, HolderLookup.Provider registries) {
-		tag.putBoolean("Running", running);
-		tag.putInt("Axis", rotationAxis.ordinal());
-		tag.putFloat("Angle", angle);
 		// Flush live block entities back into the assembly first, so the serialized structure
 		// reflects their current state (smelt progress, container contents, …) for both save and sync.
 		if (simLevel != null && simLevel.getAssembly() == assembly)
@@ -867,25 +811,6 @@ public final class AssemblyController {
 
 	public void readState(CompoundTag tag, HolderLookup.Provider registries) {
 		Level level = host.assemblyLevel();
-		// A structure edit (break/place) re-syncs the whole host while it keeps spinning. The
-		// client advances the angle deterministically every tick, so adopting the packet's
-		// (already stale) angle here would snap the rotation. Only adopt the synced angle on
-		// the initial load; otherwise keep the client's free-running angle.
-		boolean wasRunningWithAssembly = running && assembly != null;
-		float clientAngle = angle;
-		float clientPrevAngle = prevAngle;
-
-		running = tag.getBoolean("Running");
-		rotationAxis = Axis.values()[tag.getInt("Axis")];
-
-		if (level != null && level.isClientSide && wasRunningWithAssembly && running) {
-			angle = clientAngle;
-			prevAngle = clientPrevAngle;
-		} else {
-			angle = tag.getFloat("Angle");
-			prevAngle = angle;
-		}
-
 		if (tag.contains("Assembly")) {
 			assembly = new Assembly();
 			assembly.readNBT(registries, tag.getCompound("Assembly"), level == null ? 0L : level.getGameTime());

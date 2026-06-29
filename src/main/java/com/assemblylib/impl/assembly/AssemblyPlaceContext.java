@@ -94,8 +94,8 @@ public class AssemblyPlaceContext extends BlockPlaceContext {
 
 	@Override
 	public float getRotation() {
-		// Player-relative yaw (banners, signs, skulls) measured in the structure's frame.
-		float rotation = super.getRotation();
-		return transform.axis() == Direction.Axis.Y ? rotation - transform.angle() : rotation;
+		// Player-relative yaw (banners, signs, skulls) measured in the structure's frame. yawDegrees()
+		// is the platform's yaw (zero for a pure tilt), so this generalises the old Y-axis-only case.
+		return super.getRotation() - transform.yawDegrees();
 	}
 }

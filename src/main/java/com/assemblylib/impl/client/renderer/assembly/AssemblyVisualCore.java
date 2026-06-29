@@ -175,7 +175,6 @@ public class AssemblyVisualCore {
 	}
 
 	private void setEmbeddingTransform(float partialTick) {
-		float angle = host.getInterpolatedAngle(partialTick);
 		Direction facing = host.assemblyFacing();
 		// A nested host's embedding is a child of its parent's embedding, so its frame is the parent
 		// assembly's LOCAL space: translate by the raw parent-local cell (no render-origin offset).
@@ -187,7 +186,7 @@ public class AssemblyVisualCore {
 		Matrix4f pose = new Matrix4f();
 		pose.translate((float) vp.x + facing.getStepX(), (float) vp.y + facing.getStepY(),
 			(float) vp.z + facing.getStepZ());
-		AssemblyTransform.pivotRotate(pose, host.getRotationAxis(), angle);
+		AssemblyTransform.pivotRotate(pose, AssemblyTransform.rotationOf(host.assemblyTransform(partialTick)));
 
 		embedding.transforms(pose, pose.normal(new Matrix3f()));
 	}
