@@ -14,11 +14,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.PistonType;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.neoforged.neoforge.client.model.data.ModelData;
 
@@ -47,15 +43,10 @@ public final class AssemblyRenderer {
 		poseStack.mulPose(AssemblyTransform.rotationOf(host.getAssemblyTransform(partialTick)));
 		poseStack.translate(-0.5, -0.5, -0.5);
 
-		// The head's own block is invisible; draw the piston-head model directly off the host's
-		// facing so it appears immediately on placement (no wait for the assembly to sync) and
-		// in both render backends (this runs via neverSkipVanillaRender).
-		renderHead(facing, poseStack, buffers, packedLight, packedOverlay);
-
 		Assembly assembly = host.getAssembly();
 		if (assembly != null && !assembly.isEmpty()) {
-			// Static block models: only when Flywheel isn't drawing the structure instance. (The
-			// invisible head produces no geometry here either way.)
+			// Static block models: only when Flywheel isn't drawing the structure instance. The head
+			// is just another block in the structure (its model is the piston head), so it draws here.
 			if (!flywheelActive) {
 				BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
 				for (StructureBlockInfo info : assembly.getBlocks().values()) {
@@ -76,21 +67,6 @@ public final class AssemblyRenderer {
 				flywheelActive);
 		}
 
-		poseStack.popPose();
-	}
-
-	/** Draw the vanilla piston-head model at the host's own cell (the head's local position). */
-	private static void renderHead(Direction facing, PoseStack poseStack, MultiBufferSource buffers, int packedLight,
-		int packedOverlay) {
-		BlockState head = Blocks.PISTON_HEAD.defaultBlockState()
-			.setValue(PistonHeadBlock.FACING, facing)
-			.setValue(PistonHeadBlock.TYPE, PistonType.DEFAULT)
-			.setValue(PistonHeadBlock.SHORT, false);
-		BlockPos local = BlockPos.ZERO.relative(facing.getOpposite());
-		poseStack.pushPose();
-		poseStack.translate(local.getX(), local.getY(), local.getZ());
-		Minecraft.getInstance().getBlockRenderer().renderSingleBlock(head, poseStack, buffers, packedLight,
-			packedOverlay, ModelData.EMPTY, null);
 		poseStack.popPose();
 	}
 
