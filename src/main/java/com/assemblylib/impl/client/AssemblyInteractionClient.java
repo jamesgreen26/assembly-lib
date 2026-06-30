@@ -41,6 +41,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
@@ -244,9 +245,14 @@ public final class AssemblyInteractionClient {
 		if (hand == null)
 			return false;
 
-		// Predict the placement locally so the block appears immediately; the authoritative
-		// server sync replaces it a round-trip later (and corrects it if the server disagrees).
-		if (!predictPlacement(player, currentHit, hand))
+		// Predict the placement locally so the block appears immediately; the authoritative server sync
+		// replaces it a round-trip later (and corrects it if the server disagrees). Block-entity blocks
+		// (chests, …) are NOT predicted: the lightweight client sim can't reproduce the server's
+		// block-entity/neighbour side-effects (e.g. a chest pairing flips the adjacent chest's TYPE), so a
+		// predicted state would render a wrong transient until the sync lands. Just send and let the
+		// authoritative sync show it.
+		boolean placingBlockEntity = ((BlockItem) player.getItemInHand(hand).getItem()).getBlock() instanceof EntityBlock;
+		if (!placingBlockEntity && !predictPlacement(player, currentHit, hand))
 			return true;
 		AssemblyLibPackets.sendToServer(new AssemblyPlaceC2SPacket(AssemblyPath.of(currentHit.motor()),
 			currentHit.localPos(), currentHit.localFace(), currentHit.localHit(), hand));
