@@ -440,6 +440,13 @@ public final class AssemblyInteractionClient {
 				if (inClientWorld(be, mc.level))
 					be.getAssemblyController().collideWithPlayer(mc.player);
 			}
+			// Vanilla stops creative flight on landing in LocalPlayer#aiStep, but that runs before our
+			// collision (which sets onGround) and is undone next tick when vanilla move() clears onGround
+			// — the assembly isn't a real block. Re-apply the same stop here once we've landed on one.
+			if (mc.player.onGround() && mc.player.getAbilities().flying && !mc.gameMode.isAlwaysFlying()) {
+				mc.player.getAbilities().flying = false;
+				mc.player.onUpdateAbilities();
+			}
 		}
 	}
 
