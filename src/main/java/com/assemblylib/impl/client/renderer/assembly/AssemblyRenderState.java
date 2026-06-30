@@ -25,10 +25,11 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 
 /**
- * Client-side cache of the block entities captured in a assembly, kept LIVE: the reconstructed
- * block entities are client-ticked every tick (so chest lids, spawner spin, campfire smoke, conduit
- * frames, … animate as they would in the world) and their data is refreshed in place on each sync
- * (so contents/sign-text/progress update without re-creating the instance and resetting animation).
+ * Client-side cache of the block entities captured in a assembly, reconstructed so their renderers
+ * are called and their data is refreshed in place on each sync (so contents/sign-text/progress update
+ * without re-creating the instance and resetting animation). Block entities implementing
+ * {@link com.assemblylib.api.SimulatedBlockEntity} are additionally client-ticked every tick (so chest
+ * lids, spawner spin, campfire smoke, … animate); inert ones render statically from their update tag.
  *
  * <p>The block entities are hosted on a {@link AssemblyRenderLevel} (a wrapped client level that
  * exposes the assembly's own blocks and block entities at their LOCAL positions), so neighbour-
@@ -208,6 +209,9 @@ public class AssemblyRenderState {
 		List<TickingBE> rebuilt = new ArrayList<>();
 		for (BlockEntity be : blockEntities) {
 			BlockState state = be.getBlockState();
+			// Inert (non-simulated) block entities are reconstructed for rendering only — never ticked.
+			if (!(be instanceof SimulatedBlockEntity))
+				continue;
 			if (!(state.getBlock() instanceof EntityBlock entityBlock))
 				continue;
 			BlockEntityTicker<BlockEntity> ticker =
@@ -227,9 +231,10 @@ public class AssemblyRenderState {
 		BlockEntity be = entityBlock.newBlockEntity(localPos, state);
 		if (be == null)
 			return null;
-		// Mirror the server gate: only simulated (and non-host) block entities are reconstructed for
-		// rendering. Others render as plain blocks (block model only), with no live block entity.
-		if (!(be instanceof SimulatedBlockEntity) || be instanceof AssemblyHost)
+		// Host block entities are never reconstructed (no nesting). Everything else IS reconstructed so
+		// its renderer is still called — but only SimulatedBlockEntity ones are ticked (see
+		// rebuildTickers), so an inert block entity renders statically from its synced update tag.
+		if (be instanceof AssemblyHost)
 			return null;
 		be.setLevel(renderLevel);
 		be.setBlockState(state);
