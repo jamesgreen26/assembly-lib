@@ -12,6 +12,7 @@ import org.apache.commons.lang3.mutable.MutableFloat;
 import org.apache.commons.lang3.mutable.MutableObject;
 
 import com.assemblylib.impl.assembly.Assembly;
+import com.assemblylib.impl.assembly.AssemblyGroundEntity;
 import com.assemblylib.impl.assembly.AssemblyTransform;
 import com.assemblylib.impl.assembly.collision.CollisionList.Populate;
 import com.assemblylib.impl.assembly.collision.ContinuousOBBCollider.ContinuousSeparationManifold;
@@ -251,8 +252,14 @@ public final class AssemblyCollider {
 				entity.fallDistance = 0;
 				boolean canWalk = bounce != 0 || slide == 0;
 				if (canWalk || !transform.hasVerticalRotation())
-					if (canWalk)
+					if (canWalk) {
 						entity.setOnGround(true);
+						// Vanilla move() clears onGround each tick (the assembly isn't a real block), so
+						// record that we're standing on the assembly for onGround-gated effects like view
+						// bobbing in Player#aiStep. Cleared each tick before the player's collision sweep.
+						if (entity instanceof AssemblyGroundEntity grounded)
+							grounded.zps$setOnAssemblyGround(true);
+					}
 				if (entity instanceof ItemEntity || entity instanceof FallingBlockEntity)
 					entityMotion = entityMotion.multiply(.5f, 1, .5f);
 				Vec3 contactPointMotion = contactMotion.apply(entityPosition);

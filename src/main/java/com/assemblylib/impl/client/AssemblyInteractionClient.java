@@ -11,6 +11,7 @@ import com.assemblylib.impl.client.renderer.assembly.AssemblyRenderWorld;
 import com.assemblylib.impl.assembly.Assembly;
 import com.assemblylib.impl.assembly.AssemblyBlockGetter;
 import com.assemblylib.api.AssemblyHost;
+import com.assemblylib.impl.assembly.AssemblyGroundEntity;
 import com.assemblylib.impl.assembly.AssemblyHosts;
 import com.assemblylib.impl.assembly.AssemblyPath;
 import com.assemblylib.impl.assembly.AssemblyPlacementUtil;
@@ -436,6 +437,9 @@ public final class AssemblyInteractionClient {
 		// Resolve the local player against every assembled assembly (client drives
 		// this because player movement is client-authoritative).
 		if (mc.player != null) {
+			// Recomputed by the collision sweep below; clear it first so stepping off an assembly
+			// (no surface collision this tick) correctly reverts to vanilla onGround behaviour.
+			((AssemblyGroundEntity) mc.player).zps$setOnAssemblyGround(false);
 			for (AssemblyHost be : AssemblyHosts.ACTIVE_CLIENT) {
 				if (inClientWorld(be, mc.level))
 					be.getAssemblyController().collideWithPlayer(mc.player);
