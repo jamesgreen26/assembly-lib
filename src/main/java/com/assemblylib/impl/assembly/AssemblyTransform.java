@@ -17,17 +17,13 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>This is the single source of truth for the assembly transform shared by
  * the collider, the raytracer, the interaction renderer and the placement
- * context. A leaf transform is {@code world = R(+angle)*(local - CENTER) + CENTER + anchor}
+ * context. The transform is {@code world = R(+angle)*(local - CENTER) + CENTER + anchor}
  * (rotation about the motor's facing axis); it is stored as a general rigid map
- * {@code world = rotation*local + translation} so transforms can be
- * <em>composed</em>: a Servo Motor mounted on another assembly produces
- * {@code inner.andThen(parent)}, whose rotation is the (generally non-axis-aligned)
- * product of the two rotations. The leaf axis/angle are retained for callers that
- * need this motor's own rotation (block-state placement, falling-block spin).
+ * {@code world = rotation*local + translation}.
  */
 public final class AssemblyTransform {
 
-	/** Local -> world rotation (composed for a nested transform). */
+	/** Local -> world rotation. */
 	private final Matrix3d rotation;
 	/** World = rotation*local + translation. */
 	private final Vec3 translation;
@@ -73,43 +69,25 @@ public final class AssemblyTransform {
 		return new AssemblyTransform(r, t);
 	}
 
-	/**
-	 * Compose this (inner) transform with its {@code parent}: {@code this} maps inner-local into the
-	 * parent's local space, {@code parent} maps that into world space. Retains <em>this</em>
-	 * transform's leaf axis/angle (its own rotation relative to the immediate parent).
-	 */
-	public AssemblyTransform andThen(AssemblyTransform parent) {
-		Matrix3d r = parent.rotation.copy().multiply(this.rotation);
-		Vec3 t = parent.rotation.transform(this.translation).add(parent.translation);
-		return new AssemblyTransform(r, t);
-	}
-
-	/** Transform for the interpolated client render pose at {@code partialTick}, composed through any host. */
+	/** Transform for the interpolated client render pose at {@code partialTick}. */
 	public static AssemblyTransform ofInterpolated(AssemblyHost be, float partialTick) {
-		AssemblyTransform self = fromMatrix(be.getAssemblyTransform(partialTick));
-		AssemblyHost host = be.assemblyParentHost();
-		return host == null ? self : self.andThen(ofInterpolated(host, partialTick));
+		return fromMatrix(be.getAssemblyTransform(partialTick));
 	}
 
-	/** Transform for the raw (server / current) pose, composed through any host assembly. */
+	/** Transform for the raw (server / current) pose. */
 	public static AssemblyTransform ofCurrent(AssemblyHost be) {
-		AssemblyTransform self = fromMatrix(be.getAssemblyTransform(1.0f));
-		AssemblyHost host = be.assemblyParentHost();
-		return host == null ? self : self.andThen(ofCurrent(host));
+		return fromMatrix(be.getAssemblyTransform(1.0f));
 	}
 
 	/**
-	 * Transform for the pose every host in the chain will hold after advancing one more tick by its
-	 * own intended motion ({@link AssemblyHost#getAssemblyTransformNext()}). Differencing {@code ofCurrent}
-	 * and {@code ofIntendedNext} at a platform point yields its carried velocity, including a parent's
-	 * angular velocity sweeping a nested pivot. The host decides what "one tick forward" means (a spin
-	 * step, a translation, …), so a stopped host reports the same pose and thus no carried motion.
-	 * Server-side.
+	 * Transform for the pose the host will hold after advancing one more tick by its own intended motion
+	 * ({@link AssemblyHost#getAssemblyTransformNext()}). Differencing {@code ofCurrent} and
+	 * {@code ofIntendedNext} at a platform point yields its carried velocity. The host decides what "one
+	 * tick forward" means (a spin step, a translation, …), so a stopped host reports the same pose and
+	 * thus no carried motion. Server-side.
 	 */
 	public static AssemblyTransform ofIntendedNext(AssemblyHost be) {
-		AssemblyTransform self = fromMatrix(be.getAssemblyTransformNext());
-		AssemblyHost host = be.assemblyParentHost();
-		return host == null ? self : self.andThen(ofIntendedNext(host));
+		return fromMatrix(be.getAssemblyTransformNext());
 	}
 
 	private static Matrix3d rotationMatrix(float angleDeg, Direction.Axis axis) {
@@ -169,7 +147,7 @@ public final class AssemblyTransform {
 		return rotation.copy();
 	}
 
-	/** Local -> world rotation as a quaternion, e.g. to tag a detached falling block (composed/nested). */
+	/** Local -> world rotation as a quaternion, e.g. to tag a detached falling block. */
 	public org.joml.Quaternionf localToWorldRotationQuat() {
 		return rotation.toQuaternion();
 	}
@@ -198,7 +176,7 @@ public final class AssemblyTransform {
 	/**
 	 * Build the pose that places local-space block geometry into the world,
 	 * relative to {@code cameraPos} (so it can be drawn under a level-stage
-	 * PoseStack). Works for composed (nested) transforms.
+	 * PoseStack).
 	 */
 	public Matrix4f renderPose(Vec3 cameraPos) {
 		Matrix4f pose = new Matrix4f();

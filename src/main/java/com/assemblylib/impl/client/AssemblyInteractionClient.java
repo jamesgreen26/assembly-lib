@@ -12,7 +12,6 @@ import com.assemblylib.impl.assembly.Assembly;
 import com.assemblylib.impl.assembly.AssemblyBlockGetter;
 import com.assemblylib.api.AssemblyHost;
 import com.assemblylib.impl.assembly.AssemblyHosts;
-import com.assemblylib.impl.assembly.AssemblyMenuContext;
 import com.assemblylib.impl.assembly.AssemblyPath;
 import com.assemblylib.impl.assembly.AssemblyPlacementUtil;
 import com.assemblylib.impl.assembly.AssemblyPlaceContext;
@@ -23,7 +22,6 @@ import com.assemblylib.impl.assembly.util.AssemblyMath;
 import com.assemblylib.impl.networking.AssemblyBreakC2SPacket;
 import com.assemblylib.impl.networking.AssemblyBreakProgressC2SPacket;
 import com.assemblylib.impl.networking.AssemblyPlaceC2SPacket;
-import com.assemblylib.impl.networking.AssemblyUseC2SPacket;
 import com.assemblylib.impl.networking.AssemblyLibPackets;
 import com.assemblylib.impl.mixin.MinecraftAccessor;
 import com.assemblylib.impl.mixin.MultiPlayerGameModeAccessor;
@@ -241,22 +239,10 @@ public final class AssemblyInteractionClient {
 		InteractionHand hand = null;
 		if (player.getMainHandItem().getItem() instanceof BlockItem) hand = InteractionHand.MAIN_HAND;
 		else if (player.getOffhandItem().getItem() instanceof BlockItem) hand = InteractionHand.OFF_HAND;
-		// Not holding a placeable block: treat the right-click as a block interaction (button, lever,
-		// door, pressure plate, …) on the targeted assembly block. The server runs the block's
-		// vanilla use logic against the simulation level and re-syncs; we don't predict it locally.
-		if (hand == null) {
-			InteractionHand useHand = InteractionHand.MAIN_HAND;
-			// Record the target so a menu this use opens (the block runs against the assembly sim
-			// level, so it hands a assembly-LOCAL pos to openMenu) can resolve its block entity
-			// client-side. See AssemblyMenuContext.
-			AssemblyPath path = AssemblyPath.of(currentHit.motor());
-			AssemblyMenuContext.beginUse(path, currentHit.localPos());
-			AssemblyLibPackets.sendToServer(new AssemblyUseC2SPacket(path,
-				currentHit.localPos(), currentHit.localFace(), currentHit.localHit(), useHand));
-			player.swing(useHand);
-			((MinecraftAccessor) mc).setRightClickDelay(ACTION_DELAY);
-			return true;
-		}
+		// Not holding a placeable block: assembly blocks can't be used/activated, so let vanilla handle
+		// the right-click normally.
+		if (hand == null)
+			return false;
 
 		// Predict the placement locally so the block appears immediately; the authoritative
 		// server sync replaces it a round-trip later (and corrects it if the server disagrees).
@@ -451,17 +437,9 @@ public final class AssemblyInteractionClient {
 		}
 	}
 
-	/**
-	 * Whether {@code be} (a root or nested motor) ultimately belongs to {@code clientLevel}: walk up
-	 * its host chain to the root motor and compare. Lets nested assemblys participate in client
-	 * picking and player collision.
-	 */
+	/** Whether {@code be} belongs to {@code clientLevel}. */
 	private static boolean inClientWorld(AssemblyHost be, net.minecraft.world.level.Level clientLevel) {
-		AssemblyHost m = be;
-		AssemblyHost host;
-		while ((host = m.assemblyParentHost()) != null)
-			m = host;
-		return m.assemblyLevel() == clientLevel;
+		return be.assemblyLevel() == clientLevel;
 	}
 
 	/**

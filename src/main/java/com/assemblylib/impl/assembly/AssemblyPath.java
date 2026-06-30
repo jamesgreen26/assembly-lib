@@ -1,8 +1,5 @@
 package com.assemblylib.impl.assembly;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import javax.annotation.Nullable;
 
 import com.assemblylib.api.AssemblyHost;
@@ -15,19 +12,16 @@ import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Identifies an {@link AssemblyHost} by its place in the assembly hierarchy: a {@link AssemblyRootId}
- * naming the root host, followed by the chain of assembly-LOCAL cells descending through each nesting
- * level to the target host. A root host's path has an empty {@code nestedCells} list.
+ * Identifies an {@link AssemblyHost} by an {@link AssemblyRootId} naming the host.
  *
- * <p>Interaction packets carry this instead of a single position, because a nested host lives at an
- * assembly-local cell that {@code level.getBlockEntity} cannot resolve directly. {@link #of} builds
- * the path by walking up the host chain (client send side); {@link #resolve} walks back down to the
- * live host instance (both sides, via {@link AssemblyHost#getNestedHost}).
+ * <p>Interaction packets carry this instead of a single position, so the host can be addressed
+ * uniformly whether it is a block entity or an entity. {@link #of} builds the path from a host
+ * (client send side); {@link #resolve} returns the live host instance (both sides).
  *
  * <p>The root is abstracted behind {@link AssemblyRootId}; block-position roots identify
  * block-entity hosts, and entity roots identify live entity hosts by network entity id.
  */
-public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
+public record AssemblyPath(AssemblyRootId root) {
 
 	/** How the root host of a path is named and resolved. */
 	public sealed interface AssemblyRootId permits BlockPosRoot, EntityRoot {
@@ -75,20 +69,12 @@ public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 	public static final StreamCodec<RegistryFriendlyByteBuf, AssemblyPath> STREAM_CODEC = new StreamCodec<>() {
 		@Override
 		public AssemblyPath decode(RegistryFriendlyByteBuf buffer) {
-			AssemblyRootId root = decodeRoot(buffer);
-			int n = buffer.readVarInt();
-			List<BlockPos> cells = new ArrayList<>(n);
-			for (int i = 0; i < n; i++)
-				cells.add(buffer.readBlockPos());
-			return new AssemblyPath(root, cells);
+			return new AssemblyPath(decodeRoot(buffer));
 		}
 
 		@Override
 		public void encode(RegistryFriendlyByteBuf buffer, AssemblyPath path) {
 			encodeRoot(buffer, path.root);
-			buffer.writeVarInt(path.nestedCells.size());
-			for (BlockPos cell : path.nestedCells)
-				buffer.writeBlockPos(cell);
 		}
 	};
 
@@ -118,32 +104,17 @@ public record AssemblyPath(AssemblyRootId root, List<BlockPos> nestedCells) {
 		}
 	}
 
-	/** The path identifying {@code host}, found by walking up its host chain to the root. */
+	/** The path identifying {@code host}. */
 	public static AssemblyPath of(AssemblyHost host) {
-		List<BlockPos> cells = new ArrayList<>();
-		AssemblyHost m = host;
-		AssemblyHost parent;
-		while ((parent = m.assemblyParentHost()) != null) {
-			cells.add(0, m.assemblyCellInParent()); // m's cell in the parent's local space
-			m = parent;
-		}
-		AssemblyRootId root = m instanceof Entity entity
+		AssemblyRootId root = host instanceof Entity entity
 			? new EntityRoot(entity.getId(), entity.position())
-			: new BlockPosRoot(m.assemblyHostBlockPos());
-		return new AssemblyPath(root, cells);
+			: new BlockPosRoot(host.assemblyHostBlockPos());
+		return new AssemblyPath(root);
 	}
 
-	/** The live host this path names, or {@code null} if any link is missing. Works on either side. */
+	/** The live host this path names, or {@code null} if it cannot be resolved. Works on either side. */
 	@Nullable
 	public AssemblyHost resolve(LevelReader level) {
-		AssemblyHost host = root.resolve(level);
-		if (host == null)
-			return null;
-		for (BlockPos cell : nestedCells) {
-			host = host.getNestedHost(cell);
-			if (host == null)
-				return null;
-		}
-		return host;
+		return root.resolve(level);
 	}
 }

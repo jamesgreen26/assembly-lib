@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import javax.annotation.Nullable;
 
 import com.assemblylib.api.AssemblyHost;
+import com.assemblylib.api.SimulatedBlockEntity;
 import com.assemblylib.impl.mixin.EntityAccessor;
 import net.createmod.catnip.levelWrappers.WrappedServerLevel;
 import net.minecraft.core.BlockPos;
@@ -41,31 +42,31 @@ import net.minecraft.world.ticks.TickPriority;
  * assembly's captured blocks at their LOCAL positions (air everywhere else), but
  * backed by catnip's {@link WrappedServerLevel} so it is a <b>genuine {@link ServerLevel}</b>.
  *
- * <p>This is what lets the assembly actually <i>run</i>: because the engine sees a real
- * {@code ServerLevel}, the inherited {@code Level} machinery — {@code updateNeighborsAt}/
- * {@code neighborChanged}, the real {@code CollectingNeighborUpdater}, {@code getSignal}, and
- * {@code BlockState#tick} dispatch — all work natively, reading block state through our
- * {@link #getBlockState} override and scheduling through our {@link #scheduleTick} override.
- * So buttons, levers, doors, pressure plates and non-block-entity redstone behave as in a
- * normal world, with no re-implementation.
+ * <p>Because the engine sees a real {@code ServerLevel}, the inherited {@code Level} machinery —
+ * {@code BlockState#updateShape}/{@code updateNeighbourShapes} and {@code BlockState#tick} dispatch —
+ * works natively, reading block state through our {@link #getBlockState} override and scheduling
+ * through our {@link #scheduleTick} override. So connecting blocks (fences/walls/panes) and double
+ * blocks (doors) update their shapes as in a normal world, with no re-implementation. Redstone is
+ * deliberately <b>not</b> simulated: {@link #setBlock} skips the neighbour (redstone) update, and the
+ * owner runs only falling-block scheduled ticks.
  *
  * <p>Reads come from the assembly and writes/ticks are routed into it (never the wrapped
  * real level): {@link #setBlock} mutates the assembly's block map (notifying the owner to
- * re-sync) and, when {@code UPDATE_NEIGHBORS} is set, propagates a redstone neighbour update;
- * {@link #getBlockTicks}/{@link #scheduleTick} use the assembly's own persistent tick queue.
+ * re-sync) and runs the shape-update cascade; {@link #getBlockTicks}/{@link #scheduleTick} use the
+ * assembly's own persistent tick queue.
  *
- * <p><b>Live block entities are supported here</b> (unlike the client {@link AssemblySimLevel}):
- * {@link #getBlockEntity} lazily reconstructs a live {@link BlockEntity} from the captured
- * {@code beNbt}, bound to this level at the LOCAL position, and caches it. The owner ticks them
- * ({@link #getTickingBlockEntities}) so furnaces smelt / hoppers move items / comparators read
- * containers, and {@link #flushAllBlockEntityData} writes their live state back into the
- * assembly before save/sync. Pistons remain out of scope.
+ * <p><b>Live block entities are supported here</b> (unlike the client {@link AssemblySimLevel}), but
+ * only those implementing {@link com.assemblylib.api.SimulatedBlockEntity} (and never an
+ * {@link AssemblyHost}): {@link #getBlockEntity} lazily reconstructs such a {@link BlockEntity} from
+ * the captured {@code beNbt}, bound to this level at the LOCAL position, and caches it. The owner
+ * ticks them ({@link #getTickingBlockEntities}) and {@link #flushAllBlockEntityData} writes their
+ * live state back into the assembly before save/sync. Other block entities stay as inert blocks.
  *
  * <p>Constructing a {@code WrappedServerLevel} builds a full {@code ServerLevel}, so the owner
  * caches one instance per assembly rather than allocating per tick. Server-only — the client
  * uses the lightweight {@link AssemblySimLevel}.
  */
-public class AssemblySimServerLevel extends WrappedServerLevel implements AssemblyHostLevel {
+public class AssemblySimServerLevel extends WrappedServerLevel {
 
 	private static final double RAD_TO_DEG = 180.0 / Math.PI;
 
@@ -74,13 +75,6 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 	private final Assembly assembly;
 	/** World position of the host Servo Motor, so bespoke screens can resolve their BE through it. */
 	private final BlockPos motorPos;
-	/**
-	 * The host owning this assembly, so a nested host can find its parent. Held directly (like the client
-	 * {@link com.assemblylib.impl.client.renderer.assembly.AssemblyRenderLevel}) because resolving via
-	 * {@code getBlockEntity(motorPos)} only works for block-entity hosts — an <em>entity</em> host has no
-	 * block entity at that position.
-	 */
-	private final AssemblyHost host;
 	/** Notified after a write so the host BlockEntity can mark itself dirty ({@code setChanged}). */
 	@Nullable
 	private final Runnable onChanged;
@@ -114,13 +108,12 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 	/** Own (empty) fluid queue so any stray fluid tick never leaks onto the real level. */
 	private final LevelTicks<Fluid> fluidTicks = new LevelTicks<>(cp -> true, () -> InactiveProfiler.INSTANCE);
 
-	public AssemblySimServerLevel(ServerLevel level, Assembly assembly, BlockPos motorPos, AssemblyHost host,
+	public AssemblySimServerLevel(ServerLevel level, Assembly assembly, BlockPos motorPos,
 		@Nullable Runnable onChanged, @Nullable Runnable onNeedsSync, @Nullable Supplier<AssemblyTransform> transform) {
 		super(level);
 		this.realLevel = level;
 		this.assembly = assembly;
 		this.motorPos = motorPos;
-		this.host = host;
 		this.onChanged = onChanged;
 		this.onNeedsSync = onNeedsSync;
 		this.transform = transform;
@@ -135,37 +128,17 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 		return motorPos;
 	}
 
-	/**
-	 * The level this sim wraps — the real {@link ServerLevel} for a root assembly, or the PARENT
-	 * sim level when this assembly is itself nested inside another.
-	 */
+	/** The real {@link ServerLevel} this sim wraps. */
 	public ServerLevel getRealLevel() {
 		return realLevel;
 	}
 
 	/**
-	 * The genuine, untransformed {@link ServerLevel} at the bottom of any nested-sim chain. Emissions
-	 * already mapped to world space (spawned entities, sounds, level events) must target this — not the
-	 * intermediate {@code realLevel}, which for a nested assembly is the PARENT sim and would
-	 * re-transform them.
+	 * The genuine, untransformed {@link ServerLevel}. Emissions already mapped to world space (spawned
+	 * entities, sounds, level events) target this.
 	 */
 	public ServerLevel rootRealLevel() {
-		ServerLevel l = realLevel;
-		while (l instanceof AssemblySimServerLevel sim)
-			l = sim.realLevel;
-		return l;
-	}
-
-	@Override
-	public AssemblyHost getAssemblyHost() {
-		return host;
-	}
-
-	/** A nested host asked to re-sync: nudge the parent to re-broadcast the whole structure. */
-	@Override
-	public void requestAssemblySync() {
-		if (onNeedsSync != null)
-			onNeedsSync.run();
+		return realLevel;
 	}
 
 	/** The assembly's current world pose, or {@code null} when none is available (e.g. tests). */
@@ -201,6 +174,11 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 		BlockEntity be = entityBlock.newBlockEntity(immutable, state);
 		if (be == null)
 			return null;
+		// Only block entities opting into simulation are reconstructed/ticked; an assembly host is never
+		// simulated (no nesting). Others stay as inert blocks (no live BE). This single gate also covers
+		// rebuildTickers, flushAllBlockEntityData and liveBlockEntityNbt, which all resolve through here.
+		if (!(be instanceof SimulatedBlockEntity) || be instanceof AssemblyHost)
+			return null;
 		be.setLevel(this);
 		if (info.nbt() != null)
 			be.loadWithComponents(info.nbt(), registryAccess());
@@ -234,6 +212,8 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 			BlockState state = info.state();
 			if (!(state.getBlock() instanceof EntityBlock entityBlock))
 				continue;
+			// getBlockEntity gates on the SimulatedBlockEntity marker (and excludes hosts), so a
+			// non-simulated cell yields null here and is skipped — it never gets a ticker.
 			BlockEntity be = getBlockEntity(info.pos());
 			if (be == null)
 				continue;
@@ -330,11 +310,9 @@ public class AssemblySimServerLevel extends WrappedServerLevel implements Assemb
 			state.updateNeighbourShapes(this, pos, childFlags, recursionLeft - 1);
 			state.updateIndirectNeighbourShapes(this, pos, childFlags, recursionLeft - 1);
 		}
-		// Redstone: notify the six neighbours that this cell changed. Safe to call here because
-		// we are a real ServerLevel — the inherited CollectingNeighborUpdater queues and bounds
-		// the cascade. This is what lights a lamp next to a placed redstone block, etc.
-		if ((flags & Block.UPDATE_NEIGHBORS) != 0)
-			updateNeighborsAt(pos, state.getBlock());
+		// Redstone is not simulated inside an assembly: we deliberately skip the neighbour (redstone)
+		// update that would propagate signals. The shape updates above are kept, so connections
+		// (fences/walls/panes) and double blocks (doors) still update.
 		if (onChanged != null)
 			onChanged.run();
 		// A structural change must reach clients (redstone, a furnace toggling LIT, falling blocks).

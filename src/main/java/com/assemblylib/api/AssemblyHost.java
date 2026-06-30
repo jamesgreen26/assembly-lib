@@ -32,24 +32,17 @@ public interface AssemblyHost {
 
 	// region host-native (environment / identity)
 
-	/** The level this host lives in — the real world for a root host, or a parent sim/render wrapper when nested. */
+	/** The level this host lives in — the real world the assembly is anchored in. */
 	Level assemblyLevel();
 
 	/** The direction the host faces; drives the head cell, placement, the head render model and the anchor. */
 	Direction assemblyFacing();
 
 	/**
-	 * The host's block position: its real world position for a root host, or its cell in the parent's
-	 * local space when nested. Used as the assembly anchor base, the sim level's host key and the path root.
+	 * The host's real-world block position. Used as the assembly anchor base, the sim level's host key
+	 * and the path root.
 	 */
 	BlockPos assemblyHostBlockPos();
-
-	/**
-	 * The host that hosts this one, when this host is itself a block inside another assembly (its level
-	 * is an {@link AssemblyHostLevel}). {@code null} for a host anchored directly in the real world.
-	 */
-	@Nullable
-	AssemblyHost assemblyParentHost();
 
 	/** Mark the host's backing storage dirty for persistence (block entity {@code setChanged} / entity equivalent). */
 	void markAssemblyChanged();
@@ -88,11 +81,6 @@ public interface AssemblyHost {
 		return Vec3.atLowerCornerOf(assemblyHostBlockPos().relative(assemblyFacing()));
 	}
 
-	/** This host's cell in its parent's local space (for nesting / {@link AssemblyPath}); equals the host block pos. */
-	default BlockPos assemblyCellInParent() {
-		return assemblyHostBlockPos();
-	}
-
 	/** Local position of the head: the host's own cell, on the rotation axis so it spins in place. */
 	default BlockPos headLocalPos() {
 		return BlockPos.ZERO.relative(assemblyFacing().getOpposite());
@@ -110,11 +98,6 @@ public interface AssemblyHost {
 
 	default int getAssemblyBlockCount() {
 		return getAssemblyController().getAssemblyBlockCount();
-	}
-
-	@Nullable
-	default AssemblyHost getNestedHost(BlockPos local) {
-		return getAssemblyController().getNestedHost(local);
 	}
 
 	default AABB getRenderBoundingBox() {

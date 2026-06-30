@@ -7,8 +7,6 @@ import javax.annotation.Nullable;
 
 import dev.engine_room.flywheel.api.visualization.VisualizationLevel;
 import com.assemblylib.impl.assembly.Assembly;
-import com.assemblylib.api.AssemblyHost;
-import com.assemblylib.impl.assembly.AssemblyHostLevel;
 import com.assemblylib.impl.assembly.AssemblySimLevel;
 import com.assemblylib.impl.assembly.AssemblyTransform;
 import net.minecraft.core.BlockPos;
@@ -40,28 +38,17 @@ import net.minecraft.world.phys.Vec3;
  * reported as visualizable — otherwise Flywheel only considers {@code Minecraft#level} supported and
  * would disable the Flywheel visual path / {@code skipVanillaRender} for assembly block entities.
  */
-public class AssemblyRenderLevel extends AssemblySimLevel implements VisualizationLevel, AssemblyHostLevel {
+public class AssemblyRenderLevel extends AssemblySimLevel implements VisualizationLevel {
 
 	private final Map<BlockPos, BlockEntity> blockEntities;
 	@Nullable
 	private final Supplier<AssemblyTransform> transform;
-	/** The host whose assembly this level hosts, so a nested host can compose its transform. */
-	@Nullable
-	private final AssemblyHost host;
 
 	public AssemblyRenderLevel(Level level, Assembly assembly,
-		Map<BlockPos, BlockEntity> blockEntities, @Nullable Supplier<AssemblyTransform> transform,
-		@Nullable AssemblyHost host) {
+		Map<BlockPos, BlockEntity> blockEntities, @Nullable Supplier<AssemblyTransform> transform) {
 		super(level, assembly);
 		this.blockEntities = blockEntities;
 		this.transform = transform;
-		this.host = host;
-	}
-
-	@Nullable
-	@Override
-	public AssemblyHost getAssemblyHost() {
-		return host;
 	}
 
 	@Nullable

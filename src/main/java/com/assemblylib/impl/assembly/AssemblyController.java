@@ -29,7 +29,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -47,7 +46,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -122,7 +120,7 @@ public final class AssemblyController {
 			return null;
 		}
 		if (renderState == null)
-			renderState = new AssemblyRenderState(level, assembly, () -> AssemblyTransform.ofCurrent(host), host);
+			renderState = new AssemblyRenderState(level, assembly, () -> AssemblyTransform.ofCurrent(host));
 		else
 			renderState.update(assembly);
 		return renderState;
@@ -205,7 +203,7 @@ public final class AssemblyController {
 	private AssemblySimServerLevel simLevel() {
 		if (simLevel == null || simLevel.getAssembly() != assembly)
 			simLevel = new AssemblySimServerLevel((ServerLevel) host.assemblyLevel(), assembly,
-				host.assemblyHostBlockPos(), host, host::markAssemblyChanged, () -> simNeedsSync = true,
+				host.assemblyHostBlockPos(), host::markAssemblyChanged, () -> simNeedsSync = true,
 				() -> AssemblyTransform.ofCurrent(host));
 		return simLevel;
 	}
@@ -221,32 +219,11 @@ public final class AssemblyController {
 		return simLevel().getBlockEntity(local);
 	}
 
-	/**
-	 * The live host reconstructed at assembly-local cell {@code local}, when this host nests another
-	 * assembly there — or {@code null} if that cell holds no host. Dist-aware: the server uses the sim
-	 * level's live block entity, the client the render state's. Used to walk an {@link AssemblyPath}
-	 * down to an innermost nested host.
-	 */
-	@Nullable
-	public AssemblyHost getNestedHost(BlockPos local) {
-		Level level = host.assemblyLevel();
-		BlockEntity be;
-		if (level != null && level.isClientSide) {
-			AssemblyRenderState rs = getRenderState();
-			be = rs == null ? null : rs.getBlockEntity(local);
-		} else {
-			be = getAssemblyBlockEntity(local);
-		}
-		return be instanceof AssemblyHost h ? h : null;
-	}
-
 	/** Run the assembly's own block-tick queue once (server-side). */
 	private void tickAssemblyBlocks() {
 		if (!(host.assemblyLevel() instanceof ServerLevel serverLevel))
 			return;
-		AssemblySimServerLevel sim = simLevel();
-		assembly.getBlockTicks().tick(serverLevel.getGameTime(), 65536,
-			(local, block) -> onAssemblyBlockTick(local, block, sim, serverLevel));
+		assembly.getBlockTicks().tick(serverLevel.getGameTime(), 65536, this::onAssemblyBlockTick);
 	}
 
 	/**
@@ -274,11 +251,11 @@ public final class AssemblyController {
 	}
 
 	/**
-	 * Ticker callback for a due scheduled block tick: re-validate the cell against the scheduled
-	 * block, then either run custom falling-block handling or the block's own scheduled tick.
+	 * Ticker callback for a due scheduled block tick: re-validate the cell against the scheduled block,
+	 * then run custom falling-block handling. Other scheduled ticks (redstone components) are ignored —
+	 * redstone is not simulated inside an assembly.
 	 */
-	private void onAssemblyBlockTick(BlockPos local, Block block, AssemblySimServerLevel sim,
-		ServerLevel serverLevel) {
+	private void onAssemblyBlockTick(BlockPos local, Block block) {
 		StructureBlockInfo info = assembly.getBlocks().get(local);
 		if (info == null || !info.state().is(block))
 			return;
@@ -286,14 +263,8 @@ public final class AssemblyController {
 		// detach into a real FallingBlockEntity that inherits the assembly's rotation and platform
 		// velocity (exactly like a group that splits off). We must NOT run vanilla FallingBlock#tick,
 		// which would instead spawn a plain entity at the local position and drop the block.
-		if (block instanceof FallingBlock) {
+		if (block instanceof FallingBlock)
 			detachFallingBlock(local, info.state());
-			return;
-		}
-		// Everything else runs its real scheduled tick against the (ServerLevel) sim, so
-		// repeaters/comparators/observers/redstone-torches/button-release behave as in a normal world.
-		info.state().tick(sim, local, serverLevel.getRandom());
-		simNeedsSync = true;
 	}
 
 	/**
@@ -648,49 +619,6 @@ public final class AssemblyController {
 		return true;
 	}
 
-	/**
-	 * Right-click a block in the structure (buttons, levers, doors, trapdoors, pressure plates, …).
-	 * Runs the block's vanilla use logic against the server simulation level, so its side-effects —
-	 * toggling {@code OPEN}/{@code POWERED}, scheduling the button-release tick, redstone neighbour
-	 * updates, sounds — all happen against the assembly. Mirrors vanilla's right-click order
-	 * (held-item block interaction first, then the block's own use), then re-syncs once.
-	 */
-	public boolean useAssemblyBlock(BlockPos local, Direction localFace, Vec3 localHit, ServerPlayer player,
-		InteractionHand hand) {
-		Level level = host.assemblyLevel();
-		if (level == null || level.isClientSide || assembly == null)
-			return false;
-		StructureBlockInfo info = assembly.getBlocks().get(local);
-		if (info == null)
-			return false;
-
-		AssemblyTransform transform = AssemblyTransform.ofCurrent(host);
-		if (!inReach(local, player, transform))
-			return false;
-
-		AssemblySimServerLevel sim = simLevel();
-		BlockState state = info.state();
-		BlockHitResult hit = new BlockHitResult(localHit, localFace, local, false);
-		ItemStack stack = player.getItemInHand(hand);
-
-		if (!stack.isEmpty()) {
-			ItemInteractionResult itemResult = state.useItemOn(stack, sim, player, hand, hit);
-			if (itemResult != ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
-				if (itemResult.consumesAction()) {
-					host.markAssemblyChanged();
-					sync();
-				}
-				return itemResult.consumesAction();
-			}
-		}
-		if (state.useWithoutItem(sim, player, hit).consumesAction()) {
-			host.markAssemblyChanged();
-			sync();
-			return true;
-		}
-		return false;
-	}
-
 	// endregion
 
 	// region collision
@@ -702,18 +630,9 @@ public final class AssemblyController {
 			this::getContactPointMotion, shouldCollide, this::captureLandedBlock);
 	}
 
-	/**
-	 * The genuine outer world the assembly's entities live in. For a root host this is its level; for a
-	 * nested host it walks up the host chain (whose intermediate levels are sim/render wrappers with no
-	 * entities of their own). Dist-safe — uses {@link AssemblyHost#assemblyParentHost()}, never a
-	 * wrapper type.
-	 */
+	/** The genuine outer world the assembly's entities live in — the host's own level. */
 	private Level rootRealLevel() {
-		AssemblyHost m = host;
-		AssemblyHost parent;
-		while ((parent = m.assemblyParentHost()) != null)
-			m = parent;
-		return m.assemblyLevel();
+		return host.assemblyLevel();
 	}
 
 	/**
@@ -810,18 +729,13 @@ public final class AssemblyController {
 
 	/**
 	 * Push the assembly to watching clients on its own channel ({@link AssemblySyncS2CPacket}), instead
-	 * of riding the host's block-entity / entity sync. A root host broadcasts to its trackers; a nested
-	 * host routes the request through its sim level to the parent, which re-broadcasts the whole
-	 * structure (this host's state included). Server-side; a no-op on the client.
+	 * of riding the host's block-entity / entity sync. The host broadcasts to its trackers. Server-side;
+	 * a no-op on the client.
 	 */
 	public void sync() {
 		Level level = host.assemblyLevel();
 		if (level == null || level.isClientSide)
 			return;
-		if (level instanceof AssemblyHostLevel nested) {
-			nested.requestAssemblySync();
-			return;
-		}
 		if (level instanceof ServerLevel serverLevel)
 			AssemblySync.broadcast(serverLevel, host);
 	}

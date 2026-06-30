@@ -6,16 +6,12 @@
   "minVersion": "0.8",
   "client": [
     "FallingBlockRendererMixin",
-    "LevelMixin",
-    "MenuTypeMixin",
     "MinecraftAccessor",
     "MinecraftMixin",
     "MultiPlayerGameModeAccessor",
     "PlayerMixin"
   ],
   "mixins": [
-    "AbstractContainerMenuMixin",
-    "ContainerMixin",
     "EntityAccessor",
     "FallingBlockEntityInvoker",
     "FallingBlockEntityRotationMixin",

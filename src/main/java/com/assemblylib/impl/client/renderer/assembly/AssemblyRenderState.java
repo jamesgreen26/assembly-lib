@@ -12,6 +12,7 @@ import javax.annotation.Nullable;
 import com.assemblylib.AssemblyLib;
 import com.assemblylib.impl.assembly.Assembly;
 import com.assemblylib.api.AssemblyHost;
+import com.assemblylib.api.SimulatedBlockEntity;
 import com.assemblylib.impl.assembly.AssemblyTransform;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -48,9 +49,6 @@ public class AssemblyRenderState {
 	private final Level level;
 	@Nullable
 	private final Supplier<AssemblyTransform> transform;
-	/** The host owning this assembly, handed to the render level so nested hosts find their parent. */
-	@Nullable
-	private final AssemblyHost host;
 
 	/** The last assembly reconciled against (identity changes on every sync); used as the no-op gate. */
 	@Nullable
@@ -73,11 +71,10 @@ public class AssemblyRenderState {
 	private long structureRevision;
 
 	public AssemblyRenderState(Level level, Assembly assembly,
-		@Nullable Supplier<AssemblyTransform> transform, @Nullable AssemblyHost host) {
+		@Nullable Supplier<AssemblyTransform> transform) {
 		this.level = level;
 		this.transform = transform;
-		this.host = host;
-		this.renderLevel = new AssemblyRenderLevel(level, assembly, blockEntitiesByPos, transform, host);
+		this.renderLevel = new AssemblyRenderLevel(level, assembly, blockEntitiesByPos, transform);
 		this.levelAssembly = assembly;
 		reconcile(assembly);
 		this.assembly = assembly;
@@ -187,7 +184,7 @@ public class AssemblyRenderState {
 			// Re-point the host level at the new structure so its block reads stay current, then rebind
 			// every (preserved and newly added) block entity to it.
 			if (levelAssembly != next) {
-				renderLevel = new AssemblyRenderLevel(level, next, blockEntitiesByPos, transform, host);
+				renderLevel = new AssemblyRenderLevel(level, next, blockEntitiesByPos, transform);
 				levelAssembly = next;
 			}
 			for (BlockEntity be : blockEntities)
@@ -229,6 +226,10 @@ public class AssemblyRenderState {
 			return null;
 		BlockEntity be = entityBlock.newBlockEntity(localPos, state);
 		if (be == null)
+			return null;
+		// Mirror the server gate: only simulated (and non-host) block entities are reconstructed for
+		// rendering. Others render as plain blocks (block model only), with no live block entity.
+		if (!(be instanceof SimulatedBlockEntity) || be instanceof AssemblyHost)
 			return null;
 		be.setLevel(renderLevel);
 		be.setBlockState(state);

@@ -113,12 +113,6 @@ public class AssemblyHostEntity extends PathfinderMob implements AssemblyHost {
 	}
 
 	@Override
-	@Nullable
-	public AssemblyHost assemblyParentHost() {
-		return null;
-	}
-
-	@Override
 	public Vec3 assemblyAnchor() {
 		return hostCellCorner().add(0.0, 1.0, 0.0);
 	}

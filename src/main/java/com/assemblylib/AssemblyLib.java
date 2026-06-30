@@ -4,8 +4,8 @@ import com.assemblylib.debug.block.ModBlocks;
 import com.assemblylib.debug.blockentity.ModBlockEntities;
 import com.assemblylib.debug.entity.ModEntities;
 import com.assemblylib.impl.client.ClientSetup;
-import com.assemblylib.debug.gametest.AssemblyNestingGameTests;
-import com.assemblylib.debug.gametest.AssemblyRedstoneGameTests;
+import com.assemblylib.debug.gametest.AssemblyCollisionGameTests;
+import com.assemblylib.debug.gametest.AssemblyFallingBlockGameTests;
 import com.assemblylib.debug.gametest.ServoMotorGameTests;
 import com.assemblylib.debug.item.ModCreativeTabs;
 import com.assemblylib.debug.item.ModItems;
@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Entry point for AssemblyLib: a standalone library mod providing block-entity-hosted assemblys
- * (the Servo Motor and its nested-assembly machinery), extracted from Zero Point Systems.
+ * (the Servo Motor and its assembly machinery), extracted from Zero Point Systems.
  */
 @Mod(AssemblyLib.MOD_ID)
 public final class AssemblyLib {
@@ -52,7 +52,7 @@ public final class AssemblyLib {
 
     private static void registerGameTests(RegisterGameTestsEvent event) {
         event.register(ServoMotorGameTests.class);
-        event.register(AssemblyRedstoneGameTests.class);
-        event.register(AssemblyNestingGameTests.class);
+        event.register(AssemblyFallingBlockGameTests.class);
+        event.register(AssemblyCollisionGameTests.class);
     }
 }
