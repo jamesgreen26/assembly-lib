@@ -16,6 +16,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import org.slf4j.Logger;
@@ -31,12 +32,14 @@ public final class AssemblyLib {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public AssemblyLib(IEventBus modEventBus, Dist dist, ModContainer modContainer) {
-        ModBlocks.BLOCKS.register(modEventBus);
-        ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
-        ModEntities.ENTITIES.register(modEventBus);
-        ModItems.ITEMS.register(modEventBus);
-        ModCreativeTabs.TABS.register(modEventBus);
-        modEventBus.addListener(ModEntities::registerAttributes);
+        if (!FMLLoader.isProduction()) {
+            ModBlocks.BLOCKS.register(modEventBus);
+            ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
+            ModEntities.ENTITIES.register(modEventBus);
+            ModItems.ITEMS.register(modEventBus);
+            ModCreativeTabs.TABS.register(modEventBus);
+            modEventBus.addListener(ModEntities::registerAttributes);
+        }
         modEventBus.addListener(AssemblyLibPackets::register);
         modEventBus.addListener(AssemblyLib::registerGameTests);
         NeoForge.EVENT_BUS.register(AssemblySyncEvents.class);
