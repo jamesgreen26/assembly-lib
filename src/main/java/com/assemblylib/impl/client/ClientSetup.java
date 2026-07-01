@@ -6,10 +6,12 @@ import com.assemblylib.debug.client.AssemblyHostEntityRenderer;
 import com.assemblylib.debug.client.ServoMotorBlockEntityRenderer;
 import com.assemblylib.debug.client.ServoMotorVisual;
 import com.assemblylib.debug.entity.ModEntities;
+import com.assemblylib.impl.client.renderer.assembly.FallingBlockVisual;
 import dev.engine_room.flywheel.lib.visualization.SimpleBlockEntityVisualizer;
 import dev.engine_room.flywheel.lib.visualization.SimpleEntityVisualizer;
 import net.minecraft.client.renderer.entity.EntityRenderers;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
+import net.minecraft.world.entity.EntityType;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -30,6 +32,13 @@ public class ClientSetup {
                     .apply();
             SimpleEntityVisualizer.builder(ModEntities.ASSEMBLY_HOST.get())
                     .factory(AssemblyHostEntityVisual::new)
+                    .neverSkipVanillaRender()
+                    .apply();
+            // Falling blocks detached from an assembly: draw the carried block entity's Flywheel
+            // visual. neverSkipVanillaRender so the vanilla renderer still draws the block model and
+            // the mixin still handles block entities without a Flywheel visualizer.
+            SimpleEntityVisualizer.builder(EntityType.FALLING_BLOCK)
+                    .factory(FallingBlockVisual::new)
                     .neverSkipVanillaRender()
                     .apply();
 

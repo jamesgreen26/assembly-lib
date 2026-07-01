@@ -11,6 +11,7 @@ import org.joml.Quaternionf;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import com.assemblylib.impl.assembly.AssemblyRotatedEntity;
+import dev.engine_room.flywheel.lib.visualization.VisualizationHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -73,6 +74,10 @@ public class FallingBlockRendererMixin {
 			return;
 		be.setLevel(entity.level());
 		be.setBlockState(state);
+		// When Flywheel is drawing this block entity via its visualizer (FallingBlockVisual), don't also
+		// draw it through the vanilla BER — mirrors how captured assembly block entities are handled.
+		if (VisualizationHelper.skipVanillaRender(be))
+			return;
 		CompoundTag tag = carrier.zps$getBlockEntityTag();
 		if (tag != null && !tag.isEmpty())
 			be.handleUpdateTag(tag, entity.level().registryAccess());
