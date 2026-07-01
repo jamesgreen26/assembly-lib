@@ -482,16 +482,27 @@ public final class AssemblyController {
 		if (!inReach(local, player, transform))
 			return;
 
-		// The head coincides with the in-world host; breaking it tears down the whole host.
+		BlockState state = info.state();
+		ItemStack tool = player.getMainHandItem();
+		boolean doDrops = !player.isCreative() && serverLevel.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS);
+
+		// The head coincides with the in-world host; mining it out always tears the host down. The hook's
+		// result only decides whether the head cell also breaks like a normal block (particles/sound and
+		// its own loot) — applied before the teardown, which clears the assembly.
 		if (local.equals(host.headLocalPos())) {
+			AssemblyHost.HeadBreakResult result = host.onHeadBlockDestroyed();
+			if (result.spawnBreakEffects())
+				spawnAssemblyBreakEffects(serverLevel, local, state, transform);
+			if (result.dropHeadItem() && doDrops) {
+				BlockPos worldPos = BlockPos.containing(transform.localBlockCenterToWorld(local));
+				popBlockLoot(serverLevel, state, info.nbt(), worldPos, player, tool);
+				state.spawnAfterBreak(serverLevel, worldPos, tool, true);
+			}
 			host.destroyAssemblyHost();
 			return;
 		}
 
-		BlockState state = info.state();
-		ItemStack tool = player.getMainHandItem();
 		AssemblySimServerLevel sim = simLevel();
-		boolean doDrops = !player.isCreative() && serverLevel.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS);
 
 		// Snapshot the structure before the removal so we can drop loot for every cell this break takes
 		// out — the target plus any linked cell the shape-update cascade self-destructs (a door's other

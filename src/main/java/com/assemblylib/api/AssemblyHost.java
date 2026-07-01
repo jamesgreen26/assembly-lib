@@ -124,5 +124,32 @@ public interface AssemblyHost {
 		getAssemblyController().onHostRemoved();
 	}
 
+	/**
+	 * Called when the head block — the host's own cell in the assembly — is mined out of the structure.
+	 * The host is then torn down automatically ({@link #destroyAssemblyHost()}); this hook only lets the
+	 * host react and choose, via the returned {@link HeadBreakResult}, whether the head cell also breaks
+	 * like a normal block (spawn its particles/sound, drop its own loot). Defaults to
+	 * {@link HeadBreakResult#NONE} — nothing beyond the automatic host teardown.
+	 */
+	default HeadBreakResult onHeadBlockDestroyed() {
+		return HeadBreakResult.NONE;
+	}
+
+	/**
+	 * What the assembly should do to the head cell after {@link #onHeadBlockDestroyed()} runs: whether to
+	 * spawn its break particles/sound, and whether to drop the head block's own loot.
+	 */
+	record HeadBreakResult(boolean spawnBreakEffects, boolean dropHeadItem) {
+
+		/** Neither — the host handled the destruction itself (the default). */
+		public static final HeadBreakResult NONE = new HeadBreakResult(false, false);
+
+		/** Break particles and sound only, no drop. */
+		public static final HeadBreakResult EFFECTS_ONLY = new HeadBreakResult(true, false);
+
+		/** Break like a normal block: particles, sound, and the head's loot. */
+		public static final HeadBreakResult EFFECTS_AND_DROP = new HeadBreakResult(true, true);
+	}
+
 	// endregion
 }
