@@ -13,4 +13,14 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * of this marker, so an assembly host cannot itself live inside another assembly (no nesting).
  */
 public interface SimulatedBlockEntity {
+
+	/**
+	 * Whether this block entity's live server data (contents, progress, …) rides along when it detaches
+	 * from the assembly as a falling block — restored into the block when it lands or is re-captured.
+	 * Only simulated block entities keep this data; override to {@code false} to opt out (e.g. state
+	 * that would be stale or invalid once the block is a loose falling entity).
+	 */
+	default boolean keepsDataWhileFalling() {
+		return true;
+	}
 }

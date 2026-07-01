@@ -14,6 +14,7 @@ import javax.annotation.Nullable;
 
 import com.assemblylib.AssemblyLib;
 import com.assemblylib.api.AssemblyHost;
+import com.assemblylib.api.SimulatedBlockEntity;
 import com.assemblylib.impl.assembly.collision.AssemblyCollider;
 import com.assemblylib.impl.client.renderer.assembly.AssemblyRenderState;
 import com.assemblylib.impl.networking.AssemblySync;
@@ -305,14 +306,16 @@ public final class AssemblyController {
 	 */
 	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, AssemblySimServerLevel sim) {
 		// Capture the cell's block-entity data BEFORE the removal clears it, so it rides the falling
-		// block: the full NBT restores container contents when it lands (vanilla FallingBlockEntity#tick,
-		// or captureLandedBlock re-capturing it), and the client update tag lets it render while falling.
+		// block: the full NBT restores its data when it lands (vanilla FallingBlockEntity#tick, or
+		// captureLandedBlock re-capturing it), and the client update tag lets it render while falling.
+		// Only simulated block entities keep the server-side data (opt-out via keepsDataWhileFalling);
+		// inert ones just render from their update tag.
 		CompoundTag beNbt = null;
 		CompoundTag beUpdateTag = null;
 		if (state.hasBlockEntity()) {
-			StructureBlockInfo info = assembly.getBlocks().get(local);
-			if (info != null)
-				beNbt = liveBlockEntityNbt(sim, local, info);
+			BlockEntity live = sim.getBlockEntity(local);
+			if (live instanceof SimulatedBlockEntity simulated && simulated.keepsDataWhileFalling())
+				beNbt = live.saveWithFullMetadata(sim.registryAccess());
 			beUpdateTag = liveBlockEntityUpdateTag(sim, local);
 		}
 
