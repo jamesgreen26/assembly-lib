@@ -101,8 +101,9 @@ public class ServoMotorBlockEntity extends BlockEntity implements AssemblyHost {
 	public void destroyAssemblyHost() {
 		if (level == null || level.isClientSide)
 			return;
-		level.levelEvent(2001, worldPosition, Block.getId(getBlockState()));
-		level.removeBlock(worldPosition, false);
+		// Drop the motor item and play the break effect; the removal runs onHostRemoved, which drops
+		// the rest of the assembly's blocks. (removeBlock alone drops nothing — the motor item was lost.)
+		level.destroyBlock(worldPosition, true);
 	}
 
 	// endregion

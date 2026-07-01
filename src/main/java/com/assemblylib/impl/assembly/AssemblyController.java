@@ -3,8 +3,10 @@ package com.assemblylib.impl.assembly;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -28,6 +30,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
+import net.minecraft.world.Container;
+import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -41,6 +45,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -299,6 +304,18 @@ public final class AssemblyController {
 	 * parent transform on top of an already-world-space pose (a double transform).
 	 */
 	private void detachBlock(BlockPos local, BlockState state, Vec3 velocity, AssemblySimServerLevel sim) {
+		// Capture the cell's block-entity data BEFORE the removal clears it, so it rides the falling
+		// block: the full NBT restores container contents when it lands (vanilla FallingBlockEntity#tick,
+		// or captureLandedBlock re-capturing it), and the client update tag lets it render while falling.
+		CompoundTag beNbt = null;
+		CompoundTag beUpdateTag = null;
+		if (state.hasBlockEntity()) {
+			StructureBlockInfo info = assembly.getBlocks().get(local);
+			if (info != null)
+				beNbt = liveBlockEntityNbt(sim, local, info);
+			beUpdateTag = liveBlockEntityUpdateTag(sim, local);
+		}
+
 		sim.setBlock(local, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 
 		if (!(rootRealLevel() instanceof ServerLevel rootLevel))
@@ -310,6 +327,12 @@ public final class AssemblyController {
 		// Inherit the assembly's current (composed, for a nested assembly) orientation so the
 		// block keeps it while falling.
 		((AssemblyRotatedEntity) entity).zps$setAssemblyRotation(transform.localToWorldRotationQuat());
+		if (state.hasBlockEntity()) {
+			// Vanilla restores this into the placed block entity on landing (see FallingBlockEntity#tick).
+			entity.blockData = beNbt;
+			// Synced separately (blockData is save-only) so the client can render the block entity mid-fall.
+			((AssemblyRotatedEntity) entity).zps$setBlockEntityTag(beUpdateTag);
+		}
 		// Release it with the platform velocity (a spinning detach continues smoothly instead of
 		// jerking to a stop); for a multi-block group this is the group average. Sent to clients in
 		// the spawn packet's velocity.
@@ -466,19 +489,41 @@ public final class AssemblyController {
 		}
 
 		BlockState state = info.state();
-		BlockPos worldPos = BlockPos.containing(transform.localBlockCenterToWorld(local));
 		ItemStack tool = player.getMainHandItem();
 		AssemblySimServerLevel sim = simLevel();
+		boolean doDrops = !player.isCreative() && serverLevel.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS);
 
-		if (!player.isCreative() && serverLevel.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS)) {
-			popBlockLoot(serverLevel, state, liveBlockEntityNbt(sim, local, info), worldPos, player, tool);
-			state.spawnAfterBreak(serverLevel, worldPos, tool, true);
+		// Snapshot the structure before the removal so we can drop loot for every cell this break takes
+		// out — the target plus any linked cell the shape-update cascade self-destructs (a door's other
+		// half, a torch/rail that loses its support, …), each dropping through its own loot conditions
+		// (so a door drops exactly one item whichever half is broken). Flush live block-entity data first
+		// so the captured NBT reflects current container contents.
+		Map<BlockPos, StructureBlockInfo> before = null;
+		if (doDrops) {
+			sim.flushAllBlockEntityData();
+			before = new HashMap<>(assembly.getBlocks());
 		}
 
 		spawnAssemblyBreakEffects(serverLevel, local, state, transform);
-		// Remove through the sim level so neighbours get the standard block update (unsupported
-		// falling blocks fall), then collapse anything no longer connected to the head. Re-syncs once.
+		// Remove through the sim level so neighbours get the standard block update (unsupported falling
+		// blocks fall, linked blocks self-destruct), then collapse anything no longer connected to the
+		// head. Re-syncs once.
 		sim.setBlock(local, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+
+		if (doDrops) {
+			for (Map.Entry<BlockPos, StructureBlockInfo> entry : before.entrySet()) {
+				// Only cells this break actually removed. A block that merely became disconnected is still
+				// present here and falls off as an entity in applyStructureUpdate — not looted.
+				if (assembly.getBlocks().containsKey(entry.getKey()))
+					continue;
+				BlockPos removed = entry.getKey();
+				StructureBlockInfo removedInfo = entry.getValue();
+				BlockPos removedWorld = BlockPos.containing(transform.localBlockCenterToWorld(removed));
+				popBlockLoot(serverLevel, removedInfo.state(), removedInfo.nbt(), removedWorld, player, tool);
+				removedInfo.state().spawnAfterBreak(serverLevel, removedWorld, tool, true);
+			}
+		}
+
 		applyStructureUpdate(sim);
 	}
 
@@ -555,6 +600,19 @@ public final class AssemblyController {
 		return info.nbt();
 	}
 
+	/**
+	 * The freshest client render (update) tag for an assembly cell: the live BE's if one is loaded, else
+	 * the captured one. Rides a detached block's falling entity so it still renders (sign text, …).
+	 */
+	@Nullable
+	private CompoundTag liveBlockEntityUpdateTag(AssemblySimServerLevel sim, BlockPos local) {
+		BlockEntity live = sim.getBlockEntity(local);
+		Level level = host.assemblyLevel();
+		if (live != null && level != null)
+			return live.getUpdateTag(level.registryAccess());
+		return assembly.getUpdateTags().get(local);
+	}
+
 	/** Reconstruct any block entity from {@code nbt} and pop the block's drops at {@code worldPos}. */
 	private void popBlockLoot(ServerLevel serverLevel, BlockState state, @Nullable CompoundTag nbt, BlockPos worldPos,
 		@Nullable ServerPlayer player, ItemStack tool) {
@@ -568,6 +626,12 @@ public final class AssemblyController {
 		}
 		for (ItemStack drop : Block.getDrops(state, serverLevel, worldPos, be, player, tool))
 			Block.popResource(serverLevel, worldPos, drop);
+		// A container's contents drop through the block's onRemove lifecycle in vanilla, not its loot
+		// table — and the assembly bypasses that lifecycle. Drop them here from the reconstructed BE.
+		// Shulker boxes are excluded: their loot table copies their contents into the dropped item, so
+		// dropping again would duplicate.
+		if (be instanceof Container container && !(state.getBlock() instanceof ShulkerBoxBlock))
+			Containers.dropContents(serverLevel, worldPos, container);
 	}
 
 	/** Place the player's held block into the structure with full vanilla placement context. */
@@ -648,8 +712,17 @@ public final class AssemblyController {
 		if (state.isAir() || assembly.getBlocks().size() >= Assembly.MAX_BLOCKS)
 			return;
 
-		// Block-entity data from the falling block is dropped for now (sand/gravel/anvils have none).
-		assembly.putBlock(localCell, state, null, null);
+		// Carry the falling block's block-entity data back into the structure so a container that fell
+		// off and landed again keeps its contents (sand/gravel/anvils simply have none).
+		CompoundTag beNbt = null;
+		CompoundTag beUpdateTag = null;
+		if (state.hasBlockEntity()) {
+			beNbt = falling.blockData;
+			beUpdateTag = ((AssemblyRotatedEntity) falling).zps$getBlockEntityTag();
+			if (beUpdateTag != null && beUpdateTag.isEmpty())
+				beUpdateTag = null;
+		}
+		assembly.putBlock(localCell, state, beNbt, beUpdateTag);
 		falling.discard();
 
 		Vec3 worldCenter = AssemblyTransform.ofCurrent(host).localBlockCenterToWorld(localCell);
