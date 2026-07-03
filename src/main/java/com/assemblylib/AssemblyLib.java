@@ -12,6 +12,10 @@ import com.assemblylib.debug.item.ModCreativeTabs;
 import com.assemblylib.debug.item.ModItems;
 import com.assemblylib.impl.networking.AssemblyLibPackets;
 import com.assemblylib.impl.networking.AssemblySyncEvents;
+import com.assemblylib.impl.vchunk.AssemblyEvents;
+import com.assemblylib.impl.vchunk.AssemblyServerConfig;
+import com.assemblylib.impl.vchunk.net.AssemblyPackets;
+import com.assemblylib.debug.vchunk.AssemblyDebugCommand;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -40,12 +44,22 @@ public final class AssemblyLib {
         ModCreativeTabs.TABS.register(modEventBus);
         modEventBus.addListener(ModEntities::registerAttributes);
         modEventBus.addListener(AssemblyLibPackets::register);
+        modEventBus.addListener(AssemblyPackets::register);
         modEventBus.addListener(AssemblyLib::registerGameTests);
         NeoForge.EVENT_BUS.register(AssemblySyncEvents.class);
+
+        // Real-coordinate assembly engine (vchunk): server lifecycle/tick + debug command.
+        NeoForge.EVENT_BUS.register(AssemblyEvents.class);
+        NeoForge.EVENT_BUS.register(AssemblyDebugCommand.class);
+        modContainer.registerConfig(ModConfig.Type.SERVER, AssemblyServerConfig.SPEC);
 
         if (dist == Dist.CLIENT) {
             modContainer.registerConfig(ModConfig.Type.CLIENT, AssemblyClientConfig.SPEC);
             modEventBus.register(ClientSetup.class);
+            NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyRenderer.class);
+            NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyInteractionClient.class);
+            NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyClientBlockEntityTicker.class);
+            NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyCollisionDebugRenderer.class);
         }
     }
 
@@ -57,5 +71,6 @@ public final class AssemblyLib {
         event.register(ServoMotorGameTests.class);
         event.register(AssemblyRedstoneGameTests.class);
         event.register(AssemblyNestingGameTests.class);
+        event.register(com.assemblylib.debug.vchunk.AssemblyVChunkGameTests.class);
     }
 }
