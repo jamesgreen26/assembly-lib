@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -51,7 +52,26 @@ public final class AssemblyInteractionServer {
         Vec3 absHit = localHit.add(origin.getX(), origin.getY(), origin.getZ());
         BlockHitResult hit = new BlockHitResult(absHit, face, abs, false);
         ItemStack stack = player.getItemInHand(hand);
-        player.gameMode.useItemOn(player, level, stack, hand, hit);
+
+        // Phase 1: block-targeted interaction, exactly as vanilla does for a ServerboundUseItemOnPacket.
+        // Covers everything that implements useOn (BlockItem placement, right-clicking a chest/lever/...).
+        InteractionResult onResult = player.gameMode.useItemOn(player, level, stack, hand, hit);
+
+        // Phase 2: mirror vanilla's client `startUseItem` fall-through. When the block interaction did
+        // not consume the click (PASS) and did not hard-fail, vanilla additionally fires the item's own
+        // `use()` via a ServerboundUseItemPacket. That is the path water/lava buckets, ender pearls,
+        // bottles, potions, etc. actually act on — and the one the assembly interaction never drove, so
+        // liquids could never be placed on an assembly. We drive it here with the assembly block's
+        // absolute hit installed as the POV-hit override (see AssemblyItemUseMixin), so those items
+        // raycast onto the assembly block instead of the real world beneath the player.
+        if (onResult == InteractionResult.PASS) {
+            try {
+                AssemblyUseContext.push(hit);
+                player.gameMode.useItem(player, level, player.getItemInHand(hand), hand);
+            } finally {
+                AssemblyUseContext.pop();
+            }
+        }
         manager.markContentDirty(new net.minecraft.world.level.ChunkPos(abs));
     }
 }
