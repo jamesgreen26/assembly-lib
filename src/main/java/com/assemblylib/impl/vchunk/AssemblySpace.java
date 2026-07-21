@@ -14,35 +14,51 @@ import net.minecraft.world.level.ChunkPos;
  * it. (Because it is past the border, {@code AssemblyWorldBorderMixin} re-enables ticking there.)
  *
  * <p>Coordinate limits: {@link BlockPos#asLong} packs X/Z into signed 26-bit fields (±33,554,431), so
- * the grid sits in {@code [30,000,128, ~33.5M)} on both axes. Each plot is {@code 1<<LOG_PLOT_SIZE}
- * chunks on a side; the grid is {@code 1<<LOG_SIDE_LENGTH} plots on a side. A ship's "slot" is its
- * flat index into that grid.
+ * the grid sits in {@code [30,001,152, ~30.26M)} on both axes — comfortably inside the 26-bit ceiling.
+ * Each plot is {@code 1<<LOG_PLOT_SIZE} chunks on a side; the grid is {@code 1<<LOG_SIDE_LENGTH} plots
+ * on a side. A ship's "slot" is its flat index into that grid.
+ *
+ * <p><b>Each assembly owns one whole plot, and builds are centred inside it.</b> A plot is
+ * 128&times;128 chunks (2048&times;2048 blocks), and {@link #tileOrigin} — the world point that
+ * local block {@code (0,0,0)} maps to, and the assembly's rotation pivot — sits at the plot's
+ * horizontal centre at {@link #ANCHOR_Y} (the middle of the build height). So a new assembly's blocks
+ * grow outward from the middle of its own 2048-block plot with ~1024 blocks of clearance in every
+ * horizontal direction and the full build height vertically, instead of hugging a plot corner against
+ * the world border. Because plots are a disjoint grid and every build stays within its own plot, no
+ * two assemblies' block regions can ever intersect.
  */
 public final class AssemblySpace {
 
     private AssemblySpace() {}
 
-    /** log2 of a plot's side length in chunks (5 → 32 chunks → 512 blocks per plot side). */
-    public static final int LOG_PLOT_SIZE = 5;
+    /** log2 of a plot's side length in chunks (7 → 128 chunks → 2048 blocks per plot side). */
+    public static final int LOG_PLOT_SIZE = 7;
     /** log2 of the grid's side length in plots (7 → 128 plots → 16,384 slots total). */
     public static final int LOG_SIDE_LENGTH = 7;
 
-    public static final int PLOT_SIZE_CHUNKS = 1 << LOG_PLOT_SIZE;      // 32
-    public static final int PLOT_SIZE_BLOCKS = PLOT_SIZE_CHUNKS << 4;    // 512
+    public static final int PLOT_SIZE_CHUNKS = 1 << LOG_PLOT_SIZE;      // 128
+    public static final int PLOT_SIZE_BLOCKS = PLOT_SIZE_CHUNKS << 4;    // 2048
     public static final int GRID_SIDE = 1 << LOG_SIDE_LENGTH;           // 128
     public static final int MAX_SLOTS = GRID_SIDE * GRID_SIDE;          // 16,384
 
     /**
-     * Grid origin in <em>plot</em> coordinates, chosen so the first plot's block origin is just past
-     * 30,000,000: {@code ceil(30_000_000 / PLOT_SIZE_BLOCKS)} = 58594 → block 30,000,128.
+     * World Y that local block {@code (0,0,0)} maps to: the centre of the standard build height
+     * ({@code (-64 + 320) / 2 = 128}, which is also the centre of the 0..256 nether/end range), so a
+     * new build has room above and below its seed instead of starting at bedrock.
      */
-    public static final int ORIGIN_PLOT = 58594;
+    public static final int ANCHOR_Y = 128;
+
+    /**
+     * Grid origin in <em>plot</em> coordinates, chosen so the first plot's block origin is just past
+     * 30,000,000: {@code ceil(30_000_000 / PLOT_SIZE_BLOCKS)} = 14649 → block 30,001,152.
+     */
+    public static final int ORIGIN_PLOT = 14649;
 
     /** Origin of the whole band in chunk coordinates (inclusive lower bound on both X and Z). */
-    public static final int ORIGIN_CHUNK = ORIGIN_PLOT << LOG_PLOT_SIZE;              // 1,875,008
+    public static final int ORIGIN_CHUNK = ORIGIN_PLOT << LOG_PLOT_SIZE;              // 1,875,072
     /** Exclusive upper chunk bound of the band on both axes. */
-    public static final int END_CHUNK = (ORIGIN_PLOT + GRID_SIDE) << LOG_PLOT_SIZE;   // 1,879,104
-    /** Origin block X/Z of the band (≈ 30,000,128). */
+    public static final int END_CHUNK = (ORIGIN_PLOT + GRID_SIDE) << LOG_PLOT_SIZE;   // 1,891,456
+    /** Origin block X/Z of the band (≈ 30,001,152). */
     public static final int ORIGIN_BLOCK = ORIGIN_CHUNK << 4;
 
     // ---- membership tests ----
@@ -86,10 +102,17 @@ public final class AssemblySpace {
         return new ChunkPos((ORIGIN_PLOT + px) << LOG_PLOT_SIZE, (ORIGIN_PLOT + pz) << LOG_PLOT_SIZE);
     }
 
-    /** World-block origin (minimum corner) of the plot owned by {@code slot}. */
+    /**
+     * The world block that assembly-local {@code (0,0,0)} maps to for {@code slot}: the plot's
+     * horizontal centre at {@link #ANCHOR_Y}. This is the anchor for every local&harr;absolute
+     * conversion <em>and</em> the assembly's rotation pivot, so a new build sits centred in its plot
+     * (see the class javadoc). Integer division means "centre" is the block at {@code min + 1024}, not
+     * a fractional midpoint — close enough, and the reason the plot side is even.
+     */
     public static BlockPos tileOrigin(int slot) {
         ChunkPos c = tileOriginChunk(slot);
-        return new BlockPos(c.getMinBlockX(), 0, c.getMinBlockZ());
+        int half = PLOT_SIZE_BLOCKS >> 1; // 1024
+        return new BlockPos(c.getMinBlockX() + half, ANCHOR_Y, c.getMinBlockZ() + half);
     }
 
     /** Convert an assembly-local block position to absolute world coordinates. */
