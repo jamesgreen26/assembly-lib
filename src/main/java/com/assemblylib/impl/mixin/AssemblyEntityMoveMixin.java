@@ -13,14 +13,18 @@ import com.assemblylib.impl.vchunk.collision.AssemblyCollideAccess;
 import com.assemblylib.impl.vchunk.collision.AssemblyCollisionCandidates;
 import com.assemblylib.impl.vchunk.collision.AssemblyCollisionInfo;
 import com.assemblylib.impl.vchunk.collision.AssemblyEntityCollision;
+import com.assemblylib.impl.vchunk.collision.AssemblyStandingBlock;
 import com.assemblylib.impl.vchunk.collision.drag.AssemblyDraggingInformation;
 import com.assemblylib.impl.vchunk.collision.drag.AssemblyDraggingProvider;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -163,6 +167,47 @@ public abstract class AssemblyEntityMoveMixin implements AssemblyCollideAccess {
             di.setTrackingAssemblyHandle(-1);
         }
         return after;
+    }
+
+    /**
+     * Step sounds (and fall-on / block-speed-factor) read the block under the entity via
+     * {@code level().getBlockState(blockBelow)} inside {@code move()}. Standing on an assembly, that
+     * world position is air (the block lives far away), so the {@code !state.isAir()} step-sound gate
+     * fails and no footstep plays. Substitute the assembly block the entity is riding so vanilla picks
+     * the correct {@code SoundType} and plays it — at the entity's own (apparent) position, which is
+     * already right. Deep by construction: every block-below effect funneling through this query gets
+     * the assembly block for free, with zero per-block work.
+     */
+    @WrapOperation(
+            method = "move",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;")
+    )
+    private BlockState assemblylib$stepBlock(Level level, BlockPos pos, Operation<BlockState> original) {
+        BlockState real = original.call(level, pos);
+        if (!real.isAir()) {
+            return real;
+        }
+        BlockState onAssembly = AssemblyStandingBlock.below((Entity) (Object) this);
+        return onAssembly != null ? onAssembly : real;
+    }
+
+    /**
+     * Sprint/step dust particles ({@code spawnSprintParticle}) read the same block-below and emit a
+     * {@code BlockParticleOption} of it. Over an assembly the real query is air (no particle); feed it
+     * the ridden assembly block so the correct block-textured dust sprays at the entity's feet — and,
+     * being a real particle, it then collides with the assembly through the particle-collision mixin.
+     */
+    @WrapOperation(
+            method = "spawnSprintParticle",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;")
+    )
+    private BlockState assemblylib$sprintBlock(Level level, BlockPos pos, Operation<BlockState> original) {
+        BlockState real = original.call(level, pos);
+        if (!real.isAir()) {
+            return real;
+        }
+        BlockState onAssembly = AssemblyStandingBlock.below((Entity) (Object) this);
+        return onAssembly != null ? onAssembly : real;
     }
 
     @Inject(method = "move", at = @At("TAIL"))

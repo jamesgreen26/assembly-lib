@@ -111,8 +111,12 @@ public final class AssemblyRenderer {
             int packedLight = 15728880;
             if (realLevel != null) {
                 BlockPos worldPos = BlockPos.containing(transform.localToWorld(Vec3.atCenterOf(local)));
-                packedLight = LightTexture.pack(realLevel.getBrightness(LightLayer.SKY, worldPos),
-                    realLevel.getBrightness(LightLayer.BLOCK, worldPos));
+                // LightTexture.pack(blockLight, skyLight) — block first, sky second. Passing them in the
+                // other order forces the block-light channel to the sky value (15 outdoors), which is
+                // why single chests (whose renderer uses this value directly) rendered full-bright while
+                // double chests — which recompute their own light via BrightnessCombiner — looked fine.
+                packedLight = LightTexture.pack(realLevel.getBrightness(LightLayer.BLOCK, worldPos),
+                    realLevel.getBrightness(LightLayer.SKY, worldPos));
             }
             poseStack.pushPose();
             poseStack.translate(local.getX(), local.getY(), local.getZ());

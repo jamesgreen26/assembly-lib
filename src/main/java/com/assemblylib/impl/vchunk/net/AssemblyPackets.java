@@ -18,6 +18,7 @@ public final class AssemblyPackets {
         PayloadRegistrar registrar = event.registrar(PROTOCOL_VERSION);
         registrar.playToClient(AssemblySnapshotS2CPacket.TYPE, AssemblySnapshotS2CPacket.STREAM_CODEC, AssemblySnapshotS2CPacket::handle);
         registrar.playToClient(AssemblyBlockDiffS2CPacket.TYPE, AssemblyBlockDiffS2CPacket.STREAM_CODEC, AssemblyBlockDiffS2CPacket::handle);
+        registrar.playToClient(AssemblyBlockEventS2CPacket.TYPE, AssemblyBlockEventS2CPacket.STREAM_CODEC, AssemblyBlockEventS2CPacket::handle);
         registrar.playToClient(AssemblyTransformS2CPacket.TYPE, AssemblyTransformS2CPacket.STREAM_CODEC, AssemblyTransformS2CPacket::handle);
         registrar.playToClient(AssemblyRemoveS2CPacket.TYPE, AssemblyRemoveS2CPacket.STREAM_CODEC, AssemblyRemoveS2CPacket::handle);
         registrar.playToServer(AssemblyAttackC2SPacket.TYPE, AssemblyAttackC2SPacket.STREAM_CODEC, AssemblyAttackC2SPacket::handle);

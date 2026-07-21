@@ -1,6 +1,7 @@
 package com.assemblylib.impl.vchunk.client;
 
 import com.assemblylib.impl.vchunk.net.AssemblyBlockDiffS2CPacket;
+import com.assemblylib.impl.vchunk.net.AssemblyBlockEventS2CPacket;
 import com.assemblylib.impl.vchunk.net.AssemblyRemoveS2CPacket;
 import com.assemblylib.impl.vchunk.net.AssemblySnapshotS2CPacket;
 import com.assemblylib.impl.vchunk.net.AssemblyTransformS2CPacket;
@@ -31,6 +32,15 @@ public final class ClientAssemblyNetwork {
         }
         // If the assembly is unknown (diff raced ahead of the initial snapshot), drop it — the full
         // snapshot that must still be in flight carries the complete state anyway.
+    }
+
+    public static void handleBlockEvent(AssemblyBlockEventS2CPacket packet) {
+        ClientAssembly assembly = ClientAssemblyManager.get(packet.handle());
+        if (assembly != null) {
+            assembly.applyBlockEvent(packet.localPos(), packet.eventId(), packet.param());
+        }
+        // Unknown assembly (event raced ahead of the initial snapshot): drop it. A lid event is
+        // transient anyway, and the snapshot still in flight carries the block entity's saved state.
     }
 
     public static void handleTransform(AssemblyTransformS2CPacket packet) {

@@ -6,9 +6,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import com.assemblylib.impl.vchunk.Assembly;
 import com.assemblylib.impl.vchunk.AssemblyEffectRedirect;
 import com.assemblylib.impl.vchunk.AssemblyManager;
 import com.assemblylib.impl.vchunk.AssemblySpace;
+import com.assemblylib.impl.vchunk.net.AssemblyNetwork;
 
 import java.util.List;
 
@@ -19,6 +21,7 @@ import net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket;
 import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.block.state.BlockState;
@@ -126,6 +129,38 @@ public abstract class AssemblyServerLevelMixin {
         if (apparent != null) {
             self.gameEvent(event, apparent, context);
         }
+    }
+
+    /**
+     * Block-event forwarding chokepoint. Every {@code Level#blockEvent} funnels through here on the
+     * next tick's {@code runBlockEvents}; a {@code true} return is vanilla's signal to broadcast the
+     * {@code ClientboundBlockEventPacket} — but only to players tracking the event's REAL chunk, which
+     * for an assembly plot is nobody, so the chest lid / note pling / bell swing never reaches any
+     * client. Piggyback on that same success signal: for an assembly cell, emit our own
+     * {@link AssemblyNetwork#broadcastBlockEvent} so the client mirror can replay {@code triggerEvent}
+     * at the block's apparent position. This runs AFTER vanilla's server-side {@code triggerEvent}
+     * (which correctly updates the real block entity), so any block-state change it caused still
+     * resyncs through the normal diff path — this only adds the transient visual event on top.
+     */
+    @Inject(method = "doBlockEvent(Lnet/minecraft/world/level/BlockEventData;)Z", at = @At("RETURN"))
+    private void assemblylib$doBlockEvent(BlockEventData data, CallbackInfoReturnable<Boolean> cir) {
+        if (!cir.getReturnValueZ()) {
+            return;
+        }
+        BlockPos pos = data.pos();
+        if (!AssemblySpace.isAssemblySpace(pos)) {
+            return;
+        }
+        AssemblyManager manager = AssemblyManager.active((ServerLevel) (Object) this);
+        if (manager == null) {
+            return;
+        }
+        Assembly assembly = manager.assemblyForChunk(new ChunkPos(pos));
+        if (assembly == null) {
+            return;
+        }
+        BlockPos local = AssemblySpace.absoluteToLocal(assembly.slot(), pos);
+        AssemblyNetwork.broadcastBlockEvent(assembly, local, data.paramA(), data.paramB());
     }
 
     /**

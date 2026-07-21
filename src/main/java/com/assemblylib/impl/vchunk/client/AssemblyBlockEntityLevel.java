@@ -98,4 +98,21 @@ public class AssemblyBlockEntityLevel extends AssemblyWrappedLevel {
         Vec3 vel = t.localDirToWorld(new Vec3(xs, ys, zs));
         getLevel().addParticle(options, world.x, world.y, world.z, vel.x, vel.y, vel.z);
     }
+
+    /**
+     * Client-side ambient block sounds — a campfire's crackle, a portal's whoosh, a beacon's hum —
+     * are emitted from {@code Block#animateTick} via {@code Level#playLocalSound}, whose base
+     * implementation is a no-op that only {@code ClientLevel} overrides. Blocks animate-tick against
+     * THIS wrapped level (see {@code ClientAssembly.animateBlocks}), so without an override every one
+     * of those sounds is silently dropped. Transform the emission point from assembly-local into its
+     * apparent world position and replay it on the real client level, which actually queues the sound
+     * — the sound analogue of {@link #forwardParticle}. The {@code BlockPos} and {@code Entity}
+     * overloads both funnel into this one in vanilla, so this single override covers all three.
+     */
+    @Override
+    public void playLocalSound(double x, double y, double z, net.minecraft.sounds.SoundEvent sound,
+            net.minecraft.sounds.SoundSource source, float volume, float pitch, boolean distanceDelay) {
+        Vec3 world = transform.get().localToWorld(new Vec3(x, y, z));
+        getLevel().playLocalSound(world.x, world.y, world.z, sound, source, volume, pitch, distanceDelay);
+    }
 }

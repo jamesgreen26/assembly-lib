@@ -88,11 +88,27 @@ public final class AssemblyNetwork {
 
     /** Push every currently-LOADED assembly to a player (e.g. on join). Unloaded ones sync once loaded. */
     public static void sendAllTo(ServerPlayer player, AssemblyManager manager) {
+        // A player whose connection hasn't negotiated our channel (a client without the mod, or a mock
+        // player used in tests) can't receive these payloads — sending anyway throws and would abort the
+        // join handler. Skip them; a real client re-syncs everything once its channel is up.
+        if (!player.connection.hasChannel(AssemblySnapshotS2CPacket.TYPE)) {
+            return;
+        }
         for (Assembly assembly : manager.assemblies()) {
             if (assembly.isLoaded()) {
                 PacketDistributor.sendToPlayer(player, buildSnapshot(manager, assembly));
             }
         }
+    }
+
+    /**
+     * Forward a successful block event on an assembly cell to every client mirror (Milestone 1
+     * broadcast-to-all, matching the block-diff sync). The client replays {@code triggerEvent} on the
+     * mirror block entity so lid/animation state that never rides the block-state diff still plays.
+     */
+    public static void broadcastBlockEvent(Assembly assembly, BlockPos local, int eventId, int param) {
+        PacketDistributor.sendToAllPlayers(
+            new AssemblyBlockEventS2CPacket(assembly.id().handle(), local, eventId, param));
     }
 
     public static void broadcastTransform(Assembly assembly) {

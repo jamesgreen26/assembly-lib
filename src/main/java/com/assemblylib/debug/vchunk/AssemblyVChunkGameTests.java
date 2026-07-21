@@ -463,6 +463,181 @@ public class AssemblyVChunkGameTests {
         });
     }
 
+    /** The exact demo structure the /assemblylib assembly create command builds. */
+    private static void buildDemoStructure(ServerLevel level, BlockPos origin) {
+        for (int dx = 0; dx < 5; dx++) {
+            for (int dz = 0; dz < 5; dz++) {
+                level.setBlock(origin.offset(dx, 0, dz), Blocks.STONE.defaultBlockState(), 3);
+            }
+        }
+        level.setBlock(origin.offset(2, 1, 2), Blocks.FURNACE.defaultBlockState(), 3);
+        level.setBlock(origin.offset(1, 1, 2), Blocks.CHEST.defaultBlockState(), 3);
+        level.setBlock(origin.offset(3, 1, 2), Blocks.HOPPER.defaultBlockState(), 3);
+        level.setBlock(origin.offset(0, 1, 0), Blocks.GLOWSTONE.defaultBlockState(), 3);
+        level.setBlock(origin.offset(4, 1, 4), Blocks.REDSTONE_LAMP.defaultBlockState(), 3);
+    }
+
+    /**
+     * Reproduction probe for the reported "phantom collision in the air around an assembly": builds the
+     * FULL demo structure (5x5 floor + partial-shape blocks a cell up) and, using a realistic full-size
+     * entity hitbox (a pig, 0.9x0.9) instead of the tiny item probe, sweeps a grid of AIR cells that do
+     * NOT overlap any block and asserts collision resolves nothing there. Runs the sweep under BOTH an
+     * identity transform (the create command's case) and a small non-90-degree rotation (the spin case),
+     * since a phantom that only appears off-grid would otherwise slip through.
+     */
+    @GameTest(template = TEMPLATE, timeoutTicks = 40)
+    public static void noPhantomCollisionInAirAroundDemoStructure(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        AssemblyManager manager = AssemblyManager.get(level);
+        Assembly assembly = manager.createAssembly();
+        BlockPos origin = AssemblySpace.tileOrigin(assembly.slot());
+        buildDemoStructure(level, origin);
+        manager.invalidateBounds(assembly);
+
+        BlockPos worldAnchor = helper.absolutePos(new BlockPos(1, 1, 1));
+
+        net.minecraft.world.entity.animal.Pig pig = net.minecraft.world.entity.EntityType.PIG.create(level);
+        pig.setNoGravity(true);
+        level.addFreshEntity(pig);
+
+        // Sweep a generous box of world cells spanning the whole structure and a 3-cell air halo around
+        // it. A cell is "solid" only if it holds one of the demo blocks; everything else is open air an
+        // entity must be able to pass through. The pig's 0.9-wide/0.9-tall box, centred in an air cell,
+        // never reaches into an adjacent solid cell, so any resolution in an air cell is a phantom.
+        java.util.Set<BlockPos> solidLocal = new java.util.HashSet<>();
+        for (int dx = 0; dx < 5; dx++) for (int dz = 0; dz < 5; dz++) solidLocal.add(new BlockPos(dx, 0, dz));
+        solidLocal.add(new BlockPos(2, 1, 2));
+        solidLocal.add(new BlockPos(1, 1, 2));
+        solidLocal.add(new BlockPos(3, 1, 2));
+        solidLocal.add(new BlockPos(0, 1, 0));
+        solidLocal.add(new BlockPos(4, 1, 4));
+
+        StringBuilder failures = new StringBuilder();
+        int[] checked = {0};
+        BiConsumerAABB sweep = (transform, label) -> {
+            assembly.resetTransform(transform);
+            assembly.setLoaded(true);
+            manager.invalidateBounds(assembly);
+            for (int dx = -3; dx <= 7; dx++) {
+                for (int dy = 0; dy <= 3; dy++) {
+                    for (int dz = -3; dz <= 7; dz++) {
+                        BlockPos localCell = new BlockPos(dx, dy, dz);
+                        if (solidLocal.contains(localCell)) continue;
+                        // Skip cells adjacent to a solid cell: a 0.9-wide box centred in an air cell is
+                        // 0.05 short of the shared face, but partial-shape blocks (hopper walls, chest)
+                        // plus float slack could legitimately just touch -- not the phantom we're after.
+                        if (isAdjacentToSolid(localCell, solidLocal)) continue;
+                        Vec3 apparentCenter = transform.localToWorld(new Vec3(dx + 0.5, dy + 0.5, dz + 0.5));
+                        pig.setPos(apparentCenter.x, apparentCenter.y - pig.getBbHeight() * 0.5, apparentCenter.z);
+                        pig.setDeltaMovement(Vec3.ZERO);
+                        var candidates = com.assemblylib.impl.vchunk.collision.AssemblyCollisionCandidates.forLevel(level);
+                        var info = com.assemblylib.impl.vchunk.collision.AssemblyEntityCollision.collide(
+                            pig, Vec3.ZERO, Vec3.ZERO, candidates);
+                        checked[0]++;
+                        boolean resolved = info.verticalCollision || info.horizontalCollision
+                            || info.motion.lengthSqr() > 1.0e-9;
+                        if (resolved) {
+                            failures.append(String.format("[%s] air cell local(%d,%d,%d): phantom resolve "
+                                + "(vy=%s hz=%s motion=%s)%n", label, dx, dy, dz,
+                                info.verticalCollision, info.horizontalCollision, info.motion));
+                        }
+                    }
+                }
+            }
+        };
+
+        sweep.accept(AssemblyTransform.identity(Vec3.atLowerCornerOf(worldAnchor)), "identity");
+        sweep.accept(new AssemblyTransform(Vec3.atLowerCornerOf(worldAnchor), new Quaternionf().rotateY(0.3f)), "yaw0.3");
+
+        helper.assertTrue(failures.length() == 0,
+            "phantom collisions found in " + checked[0] + " probed air cells:\n" + failures);
+        helper.succeed();
+    }
+
+    private interface BiConsumerAABB {
+        void accept(AssemblyTransform transform, String label);
+    }
+
+    /**
+     * Dynamic counterpart to the static probe: real pigs, real gravity, driven through the FULL
+     * {@code Entity.move()} mixin pipeline (broad-phase, tracking, inheritedVelocity, flag-merge) — the
+     * path the static {@code collide()} probe skips. Each pig is dropped in an AIR cell inside the
+     * ~2-block collision halo beside a resting demo structure (close enough that the broad phase flags
+     * it as touching the assembly, but not above any block) and must fall freely instead of hanging on
+     * "solid air". A phantom that only manifests through the stateful move pipeline shows up here.
+     */
+    @GameTest(template = TEMPLATE, timeoutTicks = 60)
+    public static void entitiesFallFreelyInAirHaloOfRestingAssembly(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        AssemblyManager manager = AssemblyManager.get(level);
+        Assembly assembly = manager.createAssembly();
+        BlockPos origin = AssemblySpace.tileOrigin(assembly.slot());
+        buildDemoStructure(level, origin);
+
+        // Anchor the assembly HIGH in open air, well above the gametest template's own floor, so an
+        // entity dropped beside the footprint falls through genuine empty space (a phantom would catch
+        // it at the assembly's floor height; the real template floor is far below and irrelevant).
+        BlockPos worldAnchor = helper.absolutePos(new BlockPos(1, 40, 1));
+        assembly.resetTransform(AssemblyTransform.identity(Vec3.atLowerCornerOf(worldAnchor)));
+        assembly.setLoaded(true);
+
+        // Air cells hugging the structure's sides (x just past the +X edge at local x=4, and just before
+        // the -X edge at local x=0), a couple of blocks up — squarely in the halo, squarely in the air.
+        // Footprint is local 0..4 → apparent 0..5; these sit just OUTSIDE it (air) but inside the halo.
+        double[][] spots = {
+            {5.6, 2.5, 2.5}, {-0.6, 2.5, 2.5}, {2.5, 2.5, 5.6}, {2.5, 2.5, -0.6}, {5.5, 1.5, 5.5},
+        };
+        java.util.List<net.minecraft.world.entity.Entity> stands = new java.util.ArrayList<>();
+        double[] startY = new double[spots.length];
+        for (int i = 0; i < spots.length; i++) {
+            var stand = net.minecraft.world.entity.EntityType.ARMOR_STAND.create(level);
+            stand.setPos(worldAnchor.getX() + spots[i][0], worldAnchor.getY() + spots[i][1], worldAnchor.getZ() + spots[i][2]);
+            level.addFreshEntity(stand);
+            stands.add(stand);
+            startY[i] = stand.getY();
+        }
+        // CONTROL: identical armor stand in the SAME xz column but high above the assembly (far outside
+        // its ~2-block collision halo), so it free-falls in isolation and never reaches into neighbouring
+        // gametest regions. Its drop is the free-fall baseline the halo stands must match — a phantom
+        // shows up as a halo stand dropping markedly LESS (impeded / sinking through solid air).
+        var control = net.minecraft.world.entity.EntityType.ARMOR_STAND.create(level);
+        control.setPos(worldAnchor.getX() + 2.5, worldAnchor.getY() + 60, worldAnchor.getZ() + 2.5);
+        level.addFreshEntity(control);
+        double controlStartY = control.getY();
+
+        helper.runAtTickTime(25, () -> {
+            double controlDrop = controlStartY - control.getY();
+            StringBuilder failures = new StringBuilder();
+            for (int i = 0; i < stands.size(); i++) {
+                double dropped = startY[i] - stands.get(i).getY();
+                // A free-falling entity and the control drop the same amount; a phantom-impeded one drops
+                // much less. Fail if a halo stand kept less than 70% of the control's free-fall drop.
+                if (dropped < controlDrop * 0.7) {
+                    failures.append(String.format("stand %d at halo spot (%.1f,%.1f,%.1f) dropped %.3f vs "
+                        + "control free-fall %.3f (onGround=%s) — impeded by phantom air%n", i,
+                        spots[i][0], spots[i][1], spots[i][2], dropped, controlDrop, stands.get(i).onGround()));
+                }
+            }
+            for (var s : stands) s.discard();
+            control.discard();
+            manager.deleteAssembly(assembly);
+            helper.assertTrue(failures.length() == 0, "phantom air-collision in resting-assembly halo:\n" + failures);
+            helper.succeed();
+        });
+    }
+
+    private static boolean isAdjacentToSolid(BlockPos cell, java.util.Set<BlockPos> solid) {
+        for (int ox = -1; ox <= 1; ox++) {
+            for (int oy = -1; oy <= 1; oy++) {
+                for (int oz = -1; oz <= 1; oz++) {
+                    if (ox == 0 && oy == 0 && oz == 0) continue;
+                    if (solid.contains(cell.offset(ox, oy, oz))) return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /**
      * The gameEvent chokepoint mixin (extra dispatch at the apparent position, original dispatch
      * preserved) must not crash or recurse when a vibration-producing event fires at a REAL

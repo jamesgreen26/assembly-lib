@@ -275,7 +275,19 @@ public final class AssemblyEntityCollision {
             }
         }
 
-        info.motion = new Vec3(collisionMotion.x, collisionMotion.y, collisionMotion.z);
+        // Snap each component back to the exactly-requested motion when the substep loop only drifted
+        // it by floating-point accumulation noise (summing delta*motion over N substeps does not
+        // reconstruct the input exactly when N doesn't divide evenly, e.g. 9 substeps -> ~1 ULP off).
+        // That ~1e-17 noise is otherwise catastrophic: vanilla's own Entity.move() tests
+        // `requestedMovement.y != collidedMotion.y` to decide verticalCollision, so a 1-ULP difference
+        // makes vanilla fabricate a vertical collision every tick for EVERY entity merely inside an
+        // assembly's broad-phase halo -- grounding it on "solid air" and killing its fall/motion, with
+        // no SAT box ever involved. A genuine collision correction is many orders of magnitude larger
+        // than this epsilon, so snapping never masks a real one.
+        double snappedX = Math.abs(collisionMotion.x - collisionMotionMoj.x) < 1.0E-9 ? collisionMotionMoj.x : collisionMotion.x;
+        double snappedY = Math.abs(collisionMotion.y - collisionMotionMoj.y) < 1.0E-9 ? collisionMotionMoj.y : collisionMotion.y;
+        double snappedZ = Math.abs(collisionMotion.z - collisionMotionMoj.z) < 1.0E-9 ? collisionMotionMoj.z : collisionMotion.z;
+        info.motion = new Vec3(snappedX, snappedY, snappedZ);
 
         Vec3 carry = new Vec3(
                 entityBoundsCenter.x - initialCenter.x,

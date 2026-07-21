@@ -263,6 +263,26 @@ public final class ClientAssembly {
     }
 
     /**
+     * Replay a forwarded vanilla block event on a mirror cell: chest/shulker/ender-chest lid, note
+     * block pling, bell swing, etc. These drive transient, client-only animation state that never
+     * rides the block-state diff, so the server forwards them explicitly (see
+     * {@code AssemblyBlockEventS2CPacket}). Route through the mirror block entity when present (the
+     * common case — the lid controller lives there and is already advanced each client tick); the few
+     * block-only {@code triggerEvent} blocks fall back to the block state on the wrapped level.
+     */
+    public void applyBlockEvent(BlockPos local, int eventId, int param) {
+        BlockEntity be = blockEntities.get(local);
+        if (be != null) {
+            be.triggerEvent(eventId, param);
+            return;
+        }
+        BlockState state = blocks.get(local);
+        if (state != null) {
+            state.triggerEvent(beLevel, local, eventId, param);
+        }
+    }
+
+    /**
      * {@code MovingPistonBlock#newBlockEntity} returns {@code null} by design (vanilla itself
      * constructs the moving BE by hand during a piston stroke) — the piston-slide animation is drawn
      * entirely from this BE's {@code progress} field by {@code PistonHeadRenderer}, so without this

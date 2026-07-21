@@ -95,6 +95,20 @@ public final class AssemblyCollisionCandidates {
         return nearby;
     }
 
+    /** The single loaded assembly with this handle in the given level, side-appropriately, or null. */
+    @Nullable
+    public static AssemblyCollisionSource forHandle(Level level, int handle) {
+        if (handle == -1) {
+            return null;
+        }
+        for (AssemblyCollisionSource source : forLevel(level)) {
+            if (source.handle() == handle) {
+                return source;
+            }
+        }
+        return null;
+    }
+
     public static List<AssemblyCollisionSource> forLevel(Level level) {
         if (level.isClientSide()) {
             List<AssemblyCollisionSource> out = new ArrayList<>();

@@ -99,6 +99,10 @@ public final class AssemblyEvents {
                 // Assembly#settleTransform.
                 if (assembly.tickMotion()) {
                     AssemblyNetwork.broadcastTransform(assembly);
+                    // Persist the new pose: the transform is written from a.save() only if this
+                    // SavedData is dirty, so a moved-then-parked assembly would otherwise reload at its
+                    // last-saved position.
+                    manager.setDirty();
                 } else {
                     assembly.settleTransform();
                 }

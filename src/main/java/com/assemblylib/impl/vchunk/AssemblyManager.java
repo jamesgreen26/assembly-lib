@@ -247,6 +247,10 @@ public final class AssemblyManager extends SavedData {
         if (a != null) {
             dirtyBlocks.put(a.id().handle(), null);
             boundsCache.remove(a.id().handle());
+            // A resident assembly's blocks live only in hand-built chunks with no ChunkHolder, so
+            // vanilla's chunk saver never touches them — this SavedData is their ONLY path to disk.
+            // Mark it dirty on every content change or the edit is dropped at the next world save.
+            setDirty();
         }
     }
 
@@ -260,6 +264,9 @@ public final class AssemblyManager extends SavedData {
         if (a == null) {
             return;
         }
+        // Persist the edit: assembly blocks reach disk only through this SavedData (their chunks have
+        // no ChunkHolder for vanilla to save), so an unmarked change is lost at the next world save.
+        setDirty();
         int handle = a.id().handle();
         boundsCache.remove(handle);
         if (dirtyBlocks.containsKey(handle)) {
