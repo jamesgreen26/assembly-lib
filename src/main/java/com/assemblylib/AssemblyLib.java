@@ -1,21 +1,13 @@
 package com.assemblylib;
 
-import com.assemblylib.debug.block.ModBlocks;
-import com.assemblylib.debug.blockentity.ModBlockEntities;
-import com.assemblylib.debug.entity.ModEntities;
-import com.assemblylib.impl.AssemblyClientConfig;
-import com.assemblylib.impl.client.ClientSetup;
-import com.assemblylib.debug.gametest.AssemblyNestingGameTests;
-import com.assemblylib.debug.gametest.AssemblyRedstoneGameTests;
-import com.assemblylib.debug.gametest.ServoMotorGameTests;
-import com.assemblylib.debug.item.ModCreativeTabs;
-import com.assemblylib.debug.item.ModItems;
-import com.assemblylib.impl.networking.AssemblyLibPackets;
-import com.assemblylib.impl.networking.AssemblySyncEvents;
+import com.assemblylib.debug.vchunk.AssemblyDebugCommand;
+import com.assemblylib.debug.vchunk.AssemblyVChunkGameTests;
+import com.assemblylib.impl.entity.AssemblyEntityTypes;
+import com.assemblylib.impl.entity.api.behavior.AssemblyBehaviors;
+import com.assemblylib.impl.entity.net.AssemblyEntityNetwork;
 import com.assemblylib.impl.vchunk.AssemblyEvents;
 import com.assemblylib.impl.vchunk.AssemblyServerConfig;
 import com.assemblylib.impl.vchunk.net.AssemblyPackets;
-import com.assemblylib.debug.vchunk.AssemblyDebugCommand;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -28,8 +20,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Entry point for AssemblyLib: a standalone library mod providing block-entity-hosted assemblys
- * (the Servo Motor and its nested-assembly machinery), extracted from Zero Point Systems.
+ * Entry point for AssemblyLib: the real-coordinate virtual-chunk ("vchunk") assembly engine —
+ * assemblies are real blocks living in dedicated far-away chunks, redirected to wherever they appear
+ * via a handful of deep vanilla chokepoint mixins.
  */
 @Mod(AssemblyLib.MOD_ID)
 public final class AssemblyLib {
@@ -37,25 +30,20 @@ public final class AssemblyLib {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public AssemblyLib(IEventBus modEventBus, Dist dist, ModContainer modContainer) {
-        ModBlocks.BLOCKS.register(modEventBus);
-        ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
-        ModEntities.ENTITIES.register(modEventBus);
-        ModItems.ITEMS.register(modEventBus);
-        ModCreativeTabs.TABS.register(modEventBus);
-        modEventBus.addListener(ModEntities::registerAttributes);
-        modEventBus.addListener(AssemblyLibPackets::register);
         modEventBus.addListener(AssemblyPackets::register);
         modEventBus.addListener(AssemblyLib::registerGameTests);
-        NeoForge.EVENT_BUS.register(AssemblySyncEvents.class);
 
-        // Real-coordinate assembly engine (vchunk): server lifecycle/tick + debug command.
+        // Entity-based assembly engine (com.assemblylib.impl.entity).
+        AssemblyEntityTypes.register(modEventBus);
+        AssemblyBehaviors.register(modEventBus);
+        AssemblyEntityNetwork.register(modEventBus);
+
+        // Server lifecycle/tick + debug command for the vchunk engine.
         NeoForge.EVENT_BUS.register(AssemblyEvents.class);
         NeoForge.EVENT_BUS.register(AssemblyDebugCommand.class);
         modContainer.registerConfig(ModConfig.Type.SERVER, AssemblyServerConfig.SPEC);
 
         if (dist == Dist.CLIENT) {
-            modContainer.registerConfig(ModConfig.Type.CLIENT, AssemblyClientConfig.SPEC);
-            modEventBus.register(ClientSetup.class);
             NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyRenderer.class);
             NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyInteractionClient.class);
             NeoForge.EVENT_BUS.register(com.assemblylib.impl.vchunk.client.AssemblyClientBlockEntityTicker.class);
@@ -68,9 +56,6 @@ public final class AssemblyLib {
     }
 
     private static void registerGameTests(RegisterGameTestsEvent event) {
-        event.register(ServoMotorGameTests.class);
-        event.register(AssemblyRedstoneGameTests.class);
-        event.register(AssemblyNestingGameTests.class);
-        event.register(com.assemblylib.debug.vchunk.AssemblyVChunkGameTests.class);
+        event.register(AssemblyVChunkGameTests.class);
     }
 }

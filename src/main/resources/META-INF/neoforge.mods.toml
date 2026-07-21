@@ -8,7 +8,7 @@ version = "${version}"
 displayName = "AssemblyLib"
 authors = "G_Mungus, Quoissant, Cosmos, PacificCyan"
 description = '''
-Block-entity-hosted assemblys: assemble, move, and interact with structures driven by a Servo Motor.
+Virtual-chunk (vchunk) assemblies: real-block structures that move, rotate, and interact via deep vanilla chokepoint mixins.
 '''
 
 [[mixins]]

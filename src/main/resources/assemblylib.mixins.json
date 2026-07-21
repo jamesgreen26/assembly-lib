@@ -6,17 +6,9 @@
   "minVersion": "0.8",
   "client": [
     "AssemblyLocalPlayerViewYawMixin",
-    "AssemblyParticleCollisionMixin",
-    "FallingBlockRendererMixin",
-    "LevelMixin",
-    "MenuTypeMixin",
-    "MinecraftAccessor",
-    "MinecraftMixin",
-    "MultiPlayerGameModeAccessor",
-    "PlayerMixin"
+    "AssemblyParticleCollisionMixin"
   ],
   "mixins": [
-    "AbstractContainerMenuMixin",
     "AssemblyContainerMenuMixin",
     "AssemblyContainerMixin",
     "AssemblyContainerOpenersMixin",
@@ -31,13 +23,7 @@
     "AssemblyServerLevelMixin",
     "AssemblySoundMixin",
     "AssemblyWorldBorderMixin",
-    "BiomeManagerAccessor",
-    "ContainerMixin",
-    "EntityAccessor",
-    "FallingBlockEntityInvoker",
-    "FallingBlockEntityRotationMixin",
-    "MinecraftServerAccessor",
-    "ServerGamePacketListenerImplAccessor"
+    "EntityAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
